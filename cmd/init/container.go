@@ -9,8 +9,8 @@ import (
 	"os"
 	"strings"
 
-	dockerTypes "github.com/docker/docker/api/types"
-	docker "github.com/docker/docker/client"
+	"docker.io/go-docker"
+	"docker.io/go-docker/api/types"
 	"github.com/golang/glog"
 	"github.com/vishvananda/netlink"
 )
@@ -62,7 +62,7 @@ func InitFromContainerEnvironment() (*RouterConfiguration, error) {
 				return nil, err
 			}
 
-			n, err := cli.NetworkInspect(context.TODO(), flatNetwork, dockerTypes.NetworkInspectOptions{})
+			n, err := cli.NetworkInspect(context.TODO(), flatNetwork, types.NetworkInspectOptions{})
 			if err != nil {
 				return nil, err
 			}
@@ -107,7 +107,7 @@ func InitFromContainerEnvironment() (*RouterConfiguration, error) {
 // for bridge networks: adds the "DefaultGatewayIPv4" aux-address to the lan interface
 // throws an error in any other case because there is no non-hacky way to run a container as a gateway as of now
 func dockerGatewayHacky(lan netlink.Link, cli *docker.Client) error {
-	networkJSON, err := cli.NetworkInspect(context.TODO(), *lanNetwork, dockerTypes.NetworkInspectOptions{})
+	networkJSON, err := cli.NetworkInspect(context.TODO(), *lanNetwork, types.NetworkInspectOptions{})
 
 	if err != nil {
 		return fmt.Errorf("error inspecting network %q: %v", *lanNetwork, err)
@@ -170,7 +170,7 @@ func dockerGatewayHacky(lan netlink.Link, cli *docker.Client) error {
 	return nil
 }
 
-func findInterfaceByDockerNetwork(dnet string, j dockerTypes.ContainerJSON) (netlink.Link, error) {
+func findInterfaceByDockerNetwork(dnet string, j types.ContainerJSON) (netlink.Link, error) {
 	n, ok := j.NetworkSettings.Networks[dnet]
 	if !ok {
 		return nil, fmt.Errorf("network %q not found on container info", dnet)
