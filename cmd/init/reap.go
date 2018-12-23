@@ -5,7 +5,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/golang/glog"
+	"go.jonnrb.io/egress/log"
 )
 
 func ReapChildren(child *os.Process) error {
@@ -20,7 +20,7 @@ func ReapChildren(child *os.Process) error {
 		}
 	}()
 
-	glog.V(2).Infof("waiting for child %v to exit; forwarding all signals", child.Pid)
+	log.V(2).Infof("waiting for child %v to exit; forwarding all signals", child.Pid)
 
 	var wstatus syscall.WaitStatus
 	var err error
@@ -29,13 +29,13 @@ func ReapChildren(child *os.Process) error {
 		if err != nil {
 			return err
 		}
-		glog.Infof("reaped pid %v", pid)
+		log.Infof("reaped pid %v", pid)
 	}
 
 	if exitCode := wstatus.ExitStatus(); exitCode != 0 {
-		glog.Errorf("child exited with code %v", exitCode)
+		log.Errorf("child exited with code %v", exitCode)
 	} else {
-		glog.V(2).Infof("child exited with code %v", exitCode)
+		log.V(2).Infof("child exited with code %v", exitCode)
 	}
 
 	return nil

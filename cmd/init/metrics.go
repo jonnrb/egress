@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/golang/glog"
+	"go.jonnrb.io/egress/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
@@ -61,7 +61,7 @@ func (m NetMetricsScraper) Close() error {
 }
 
 func (m NetMetricsScraper) ScrapeOnInterval(config *RouterConfiguration) {
-	glog.V(2).Infof("scraping metrics every %v", *metricScrapeInterval)
+	log.V(2).Infof("scraping metrics every %v", *metricScrapeInterval)
 	go func() {
 		t := time.NewTimer(*metricScrapeInterval)
 		for {
@@ -82,27 +82,27 @@ func (m NetMetricsScraper) ScrapeOnInterval(config *RouterConfiguration) {
 func DoMetricsScrape(config *RouterConfiguration) {
 	stats, err := getNetDevStats()
 	if err != nil {
-		glog.Errorf("error scraping network stats: %v", err)
+		log.Errorf("error scraping network stats: %v", err)
 		return
 	}
 
 	iface := config.uplinkInterface.Attrs().Name
 	ifaceStats, ok := stats[iface]
 	if !ok {
-		glog.Errorf("iface %q not found in kernel network stats table", iface)
+		log.Errorf("iface %q not found in kernel network stats table", iface)
 		return
 	}
 
 	receiveBytes, ok := ifaceStats["receive_bytes"]
 	if !ok {
-		glog.Error("could not find receive_bytes stat")
+		log.Error("could not find receive_bytes stat")
 		return
 	}
 	metricReceiveBytes.Set(float64(receiveBytes))
 
 	transmitBytes, ok := ifaceStats["transmit_bytes"]
 	if !ok {
-		glog.Error("could not find transmit_bytes stat")
+		log.Error("could not find transmit_bytes stat")
 		return
 	}
 	metricTransmitBytes.Set(float64(transmitBytes))

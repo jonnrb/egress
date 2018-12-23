@@ -6,7 +6,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/golang/glog"
+	"go.jonnrb.io/egress/log"
 	"github.com/vishvananda/netlink"
 )
 
@@ -15,7 +15,7 @@ var (
 )
 
 func (r RouterConfiguration) PatchIPTables() error {
-	glog.V(2).Info("setting base rules")
+	log.V(2).Info("setting base rules")
 	if err := setBaseRules(); err != nil {
 		return fmt.Errorf("error setting base rules set: %v", err)
 	}
@@ -31,9 +31,9 @@ func (r RouterConfiguration) PatchIPTables() error {
 	}
 
 	uplinkAttrs := r.uplinkInterface.Attrs()
-	glog.V(2).Infof("setting masquerading out of %q", uplinkAttrs.Name)
+	log.V(2).Infof("setting masquerading out of %q", uplinkAttrs.Name)
 	masqueradeCmd := fmt.Sprintf("-t nat -A POSTROUTING -j MASQUERADE -o %v", uplinkAttrs.Name)
-	glog.V(4).Infof("applying rule %q", masqueradeCmd)
+	log.V(4).Infof("applying rule %q", masqueradeCmd)
 	if err := iptablesRaw(masqueradeCmd); err != nil {
 		return fmt.Errorf("error applying masquerade rule: %v", err)
 	}
@@ -46,13 +46,13 @@ func forward(a, b netlink.Link, dst string) error {
 
 	var forwardingCmd string
 	if dst == "" {
-		glog.V(2).Infof("allowing forwarding from %q to %q", aAttr.Name, bAttr.Name)
+		log.V(2).Infof("allowing forwarding from %q to %q", aAttr.Name, bAttr.Name)
 		forwardingCmd = fmt.Sprintf("-t filter -A fw-interfaces -j ACCEPT -i %v -o %v", aAttr.Name, bAttr.Name)
 	} else {
-		glog.V(2).Infof("allowing forwarding from %q to %q with destination %q", aAttr.Name, bAttr.Name, dst)
+		log.V(2).Infof("allowing forwarding from %q to %q with destination %q", aAttr.Name, bAttr.Name, dst)
 		forwardingCmd = fmt.Sprintf("-t filter -A fw-interfaces -j ACCEPT -d %v -i %v -o %v", dst, aAttr.Name, bAttr.Name)
 	}
-	glog.V(4).Infof("applying rule %q", forwardingCmd)
+	log.V(4).Infof("applying rule %q", forwardingCmd)
 
 	if err := iptablesRaw(forwardingCmd); err != nil {
 		return fmt.Errorf("error applying forwarding rule: %v", err)
@@ -69,7 +69,7 @@ func OpenPort(proto, port string) error {
 		return fmt.Errorf("invalid proto: %q", proto)
 	}
 
-	glog.V(2).Infof("opening %s port %s", proto, port)
+	log.V(2).Infof("opening %s port %s", proto, port)
 
 	rule := fmt.Sprintf("-I in-%s -j ACCEPT -p %s --dport %s", proto, proto, port)
 	err := iptablesRaw(rule)
@@ -111,14 +111,14 @@ var REJECTIONS = []string{
 
 func setBaseRules() error {
 	for _, rule := range POLICY_RULES {
-		glog.V(3).Infof("applying iptables rule %q", rule)
+		log.V(3).Infof("applying iptables rule %q", rule)
 		if err := iptablesRaw(rule); err != nil {
 			return fmt.Errorf("error applying rule: %q", rule)
 		}
 	}
 
 	for _, rule := range BASE_CHAINS {
-		glog.V(3).Infof("applying iptables rule %q", rule)
+		log.V(3).Infof("applying iptables rule %q", rule)
 		if err := iptablesRaw(rule); err != nil {
 			return fmt.Errorf("error applying rule: %q", rule)
 		}
@@ -127,7 +127,7 @@ func setBaseRules() error {
 	// TODO: insert user rules here maybe
 
 	for _, rule := range REJECTIONS {
-		glog.V(3).Infof("applying iptables rule %q", rule)
+		log.V(3).Infof("applying iptables rule %q", rule)
 		if err := iptablesRaw(rule); err != nil {
 			return fmt.Errorf("error applying rule: %q", rule)
 		}

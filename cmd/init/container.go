@@ -11,8 +11,8 @@ import (
 
 	"docker.io/go-docker"
 	"docker.io/go-docker/api/types"
-	"github.com/golang/glog"
 	"github.com/vishvananda/netlink"
+	"go.jonnrb.io/egress/log"
 )
 
 var (
@@ -37,7 +37,7 @@ func InitFromContainerEnvironment() (*RouterConfiguration, error) {
 	}
 	defer cli.Close()
 
-	glog.V(2).Info("connected to docker")
+	log.V(2).Info("connected to docker")
 
 	containerID, err := os.Hostname()
 	if err != nil {
@@ -91,7 +91,7 @@ func InitFromContainerEnvironment() (*RouterConfiguration, error) {
 		}
 	}
 
-	glog.V(2).Info("applying gateway hack")
+	log.V(2).Info("applying gateway hack")
 	if err := dockerGatewayHacky(lanInterface, cli); err != nil {
 		return nil, err
 	}
@@ -138,7 +138,7 @@ func dockerGatewayHacky(lan netlink.Link, cli *docker.Client) error {
 				} else if err = netlink.AddrAdd(lan, addr); err != nil {
 					return fmt.Errorf("error adding address %q to lan: %v", s, err)
 				}
-				glog.V(2).Infof("added address %q to lan interface", s)
+				log.V(2).Infof("added address %q to lan interface", s)
 			}
 		}
 
@@ -161,7 +161,7 @@ func dockerGatewayHacky(lan netlink.Link, cli *docker.Client) error {
 			} else if err = netlink.AddrAdd(lan, addr); err != nil {
 				return fmt.Errorf("error adding address %q to lan: %v", s, err)
 			}
-			glog.V(2).Infof("added address %q to lan interface", s)
+			log.V(2).Infof("added address %q to lan interface", s)
 		}
 	default:
 		return fmt.Errorf("found unsupported lan network driver for gateway hack: %q", networkJSON.Driver)

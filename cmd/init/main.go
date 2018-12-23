@@ -12,9 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/golang/glog"
 	"github.com/kballard/go-shellquote"
 	"github.com/vishvananda/netlink"
+	"go.jonnrb.io/egress/log"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
 )
@@ -64,33 +64,33 @@ func main() {
 	var err error
 	if *cmd != "" {
 		if len(args) > 0 {
-			glog.Exit("-c or an exec line; pick one")
+			log.Fatal("-c or an exec line; pick one")
 		}
 		args, err = shellquote.Split(*cmd)
 		if err != nil {
-			glog.Exitf("error parsing shell command %q: %v", *cmd, err)
+			log.Fatalf("error parsing shell command %q: %v", *cmd, err)
 		}
 	}
 
-	glog.V(2).Infof("MaybeCreateNetworks()")
+	log.V(2).Infof("MaybeCreateNetworks()")
 	if err := MaybeCreateNetworks(); err != nil {
-		glog.Exitf("error creating networks: %v", err)
+		log.Fatalf("error creating networks: %v", err)
 	}
 
-	glog.V(2).Infof("InitFromContainerEnvironment()")
+	log.V(2).Infof("InitFromContainerEnvironment()")
 	conf, err := InitFromContainerEnvironment()
 	if err != nil {
-		glog.Exitf("error initializing network configuration: %v", err)
+		log.Fatalf("error initializing network configuration: %v", err)
 	}
 
-	glog.V(2).Infof("PatchIPTables()")
+	log.V(2).Infof("PatchIPTables()")
 	if err := conf.PatchIPTables(); err != nil {
-		glog.Exitf("error patching iptables: %v", err)
+		log.Fatalf("error patching iptables: %v", err)
 	}
 
 	scraper, err := SetupMetrics(conf)
 	if err != nil {
-		glog.Exitf("error setting up metrics: %v", err)
+		log.Fatalf("error setting up metrics: %v", err)
 	}
 	defer scraper.Close()
 
@@ -119,7 +119,7 @@ func main() {
 		}
 		OpenPort("tcp", port)
 
-		glog.Infof("listening on %q", *httpAddr)
+		log.Infof("listening on %q", *httpAddr)
 
 		return http.Serve(l, nil)
 	})
@@ -127,7 +127,7 @@ func main() {
 		defer cancel()
 
 		if len(args) > 0 {
-			glog.Infof("running %q", strings.Join(args, " "))
+			log.Infof("running %q", strings.Join(args, " "))
 			cmd := exec.Command(args[0], args[1:]...)
 			cmd.Stdout = os.Stdout
 			cmd.Stderr = os.Stderr
@@ -138,7 +138,7 @@ func main() {
 				return fmt.Errorf("error waiting for subprocess: %v", err)
 			}
 		} else {
-			glog.Info("sleeping forever")
+			log.Info("sleeping forever")
 			for {
 				time.Sleep(time.Duration(9223372036854775807))
 			}
@@ -147,7 +147,7 @@ func main() {
 	})
 
 	if err := grp.Wait(); err != nil {
-		glog.Exit(err)
+		log.Fatal(err)
 	}
 }
 
