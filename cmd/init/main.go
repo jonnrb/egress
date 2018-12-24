@@ -14,6 +14,7 @@ import (
 
 	"github.com/kballard/go-shellquote"
 	"github.com/vishvananda/netlink"
+	"go.jonnrb.io/egress/backend/docker"
 	"go.jonnrb.io/egress/fw"
 	"go.jonnrb.io/egress/fw/rules"
 	"go.jonnrb.io/egress/log"
@@ -68,8 +69,8 @@ func main() {
 		log.Fatalf("error creating networks: %v", err)
 	}
 
-	log.V(2).Infof("InitFromContainerEnvironment()")
-	cfg, err := InitFromContainerEnvironment()
+	log.V(2).Infof("docker.GetConfig()")
+	cfg, err := docker.GetConfig()
 	if err != nil {
 		log.Fatalf("error initializing network configuration: %v", err)
 	}

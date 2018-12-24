@@ -1,4 +1,4 @@
-package main
+package docker
 
 import (
 	"context"
@@ -24,7 +24,7 @@ var (
 	uplinkInterfaceName = flag.String("docker.uplink_interface", "", "Interface used for uplink (connections will be masqueraded)")
 )
 
-type config struct {
+type Config struct {
 	lan    netlink.Link
 	uplink netlink.Link
 	flat   []fw.StaticRoute
@@ -36,36 +36,34 @@ func (l link) Name() string {
 	return l.LinkAttrs.Name
 }
 
-func (cfg config) LAN() fw.Link {
+func (cfg *Config) LAN() fw.Link {
 	return link{cfg.lan.Attrs()}
 }
 
-func (cfg config) Uplink() fw.Link {
+func (cfg *Config) Uplink() fw.Link {
 	return link{cfg.uplink.Attrs()}
 }
 
-func (cfg config) FlatNetworks() []fw.StaticRoute {
+func (cfg *Config) FlatNetworks() []fw.StaticRoute {
 	return cfg.flat
 }
 
-func (cfg config) ExtraRules() rules.RuleSet {
+func (cfg *Config) ExtraRules() rules.RuleSet {
 	return nil
 }
 
-func InitFromContainerEnvironment() (config, error) {
-	var cfg config
-
+func GetConfig() (*Config, error) {
 	if *lanNetwork == "" {
-		return cfg, errors.New("-docker.lan_network flag must be specified")
+		return nil, errors.New("-docker.lan_network flag must be specified")
 	}
 
 	if *uplinkNetwork == "" && *uplinkInterfaceName == "" {
-		return cfg, errors.New("-docker.uplink_network or -docker.uplink_interface must be specified")
+		return nil, errors.New("-docker.uplink_network or -docker.uplink_interface must be specified")
 	}
 
 	cli, err := docker.NewEnvClient()
 	if err != nil {
-		return cfg, fmt.Errorf("error connecting to docker: %v", err)
+		return nil, fmt.Errorf("error connecting to docker: %v", err)
 	}
 	defer cli.Close()
 
@@ -73,17 +71,17 @@ func InitFromContainerEnvironment() (config, error) {
 
 	containerID, err := os.Hostname()
 	if err != nil {
-		return cfg, fmt.Errorf("error getting hostname: %v", err)
+		return nil, fmt.Errorf("error getting hostname: %v", err)
 	}
 
 	containerJSON, err := cli.ContainerInspect(context.TODO(), containerID)
 	if err != nil {
-		return cfg, fmt.Errorf("cannot inspect container using id %q: %v", containerID, err)
+		return nil, fmt.Errorf("cannot inspect container using id %q: %v", containerID, err)
 	}
 
 	lanInterface, err := findInterfaceByDockerNetwork(*lanNetwork, containerJSON)
 	if err != nil {
-		return cfg, err
+		return nil, err
 	}
 
 	var sr []fw.StaticRoute
@@ -91,15 +89,15 @@ func InitFromContainerEnvironment() (config, error) {
 		for _, flatNetwork := range strings.Split(*flatNetworks, ",") {
 			i, err := findInterfaceByDockerNetwork(flatNetwork, containerJSON)
 			if err != nil {
-				return cfg, err
+				return nil, err
 			}
 
 			n, err := cli.NetworkInspect(context.TODO(), flatNetwork, types.NetworkInspectOptions{})
 			if err != nil {
-				return cfg, err
+				return nil, err
 			}
 			if len(n.IPAM.Config) != 1 {
-				return cfg, fmt.Errorf("expected 1 IPAM config; got: %v", n.IPAM.Config)
+				return nil, fmt.Errorf("expected 1 IPAM config; got: %v", n.IPAM.Config)
 			}
 			subnet := n.IPAM.Config[0].Subnet
 
@@ -114,21 +112,21 @@ func InitFromContainerEnvironment() (config, error) {
 	if *uplinkInterfaceName != "" {
 		uplinkInterface, err = netlink.LinkByName(*uplinkInterfaceName)
 		if err != nil {
-			return cfg, fmt.Errorf("could not get interface %q: %v", *uplinkInterfaceName, err)
+			return nil, fmt.Errorf("could not get interface %q: %v", *uplinkInterfaceName, err)
 		}
 	} else {
 		uplinkInterface, err = findInterfaceByDockerNetwork(*uplinkNetwork, containerJSON)
 		if err != nil {
-			return cfg, fmt.Errorf("could not get interface for container network %q: %v", *uplinkNetwork, err)
+			return nil, fmt.Errorf("could not get interface for container network %q: %v", *uplinkNetwork, err)
 		}
 	}
 
 	log.V(2).Info("applying gateway hack")
 	if err := dockerGatewayHacky(lanInterface, cli); err != nil {
-		return cfg, err
+		return nil, err
 	}
 
-	return config{
+	return &Config{
 		lan:    lanInterface,
 		uplink: uplinkInterface,
 		flat:   sr,
