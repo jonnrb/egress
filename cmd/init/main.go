@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kballard/go-shellquote"
+	"github.com/google/shlex"
 	"github.com/vishvananda/netlink"
 	"go.jonnrb.io/egress/backend/docker"
 	"go.jonnrb.io/egress/fw"
@@ -63,7 +63,7 @@ func main() {
 		if len(args) > 0 {
 			log.Fatal("-c or an exec line; pick one")
 		}
-		args, err = shellquote.Split(*cmd)
+		args, err = shlex.Split(*cmd)
 		if err != nil {
 			log.Fatalf("error parsing shell command %q: %v", *cmd, err)
 		}

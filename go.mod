@@ -10,7 +10,6 @@ require (
 	github.com/gogo/protobuf v1.2.0 // indirect
 	github.com/golang/glog v0.0.0-20160126235308-23def4e6c14b
 	github.com/google/shlex v0.0.0-20181106134648-c34317bd91bf
-	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51
 	github.com/opencontainers/go-digest v1.0.0-rc1 // indirect
 	github.com/opencontainers/image-spec v1.0.1 // indirect
 	github.com/pkg/errors v0.8.0 // indirect
