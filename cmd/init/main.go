@@ -18,6 +18,7 @@ import (
 	"go.jonnrb.io/egress/fw"
 	"go.jonnrb.io/egress/fw/rules"
 	"go.jonnrb.io/egress/log"
+	"go.jonnrb.io/egress/metrics"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
 )
@@ -105,17 +106,17 @@ func main() {
 		log.Fatalf("error patching iptables: %v", err)
 	}
 
-	scraper, err := SetupMetrics(cfg)
+	ctx, cancel = context.WithCancel(context.Background())
+	defer cancel()
+
+	metricsHandler, err := metrics.New(ctx, cfg)
 	if err != nil {
 		log.Fatalf("error setting up metrics: %v", err)
 	}
-	defer scraper.Close()
+	http.Handle("/metrics", metricsHandler)
 
 	hc := SetupHealthCheck()
 	defer hc.Close()
-
-	ctx, cancel = context.WithCancel(context.Background())
-	defer cancel()
 
 	grp, ctx := errgroup.WithContext(ctx)
 	grp.Go(func() error {

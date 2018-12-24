@@ -1,10 +1,10 @@
-package main
+package metrics
 
 import (
 	"bufio"
+	"context"
 	"flag"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"strconv"
@@ -30,54 +30,45 @@ var (
 		Name: "uplink_network_transmit_bytes",
 		Help: "Counter reporting transmit bytes on the uplink interface.",
 	})
+)
+
+var (
 	metricScrapeInterval = flag.Duration(
 		"metrics.scrape_interval",
 		5*time.Second,
 		"How often to scrape metrics from the kernel.")
 )
 
-type metricsScraper chan interface{}
-
-func SetupMetrics(cfg fw.Config) (io.Closer, error) {
+// Returns a metrics handler that will scrape metrics during ctx.
+func New(ctx context.Context, cfg fw.Config) (http.Handler, error) {
 	if err := prometheus.Register(metricReceiveBytes); err != nil {
 		return nil, err
 	}
-
 	if err := prometheus.Register(metricTransmitBytes); err != nil {
 		return nil, err
 	}
 
-	http.Handle("/metrics", promhttp.Handler())
+	go scrapeOnInterval(ctx, cfg.Uplink().Name())
 
-	scraper := metricsScraper(make(chan interface{}))
-	scraper.scrapeOnInterval(cfg.Uplink().Name())
-
-	return scraper, nil
+	return promhttp.Handler(), nil
 }
 
-func (m metricsScraper) Close() error {
-	m <- nil
-	close(m)
-	return nil
-}
-
-func (m metricsScraper) scrapeOnInterval(uplinkName string) {
+func scrapeOnInterval(ctx context.Context, uplinkName string) {
 	log.V(2).Infof("scraping metrics every %v", *metricScrapeInterval)
-	go func() {
-		t := time.NewTimer(*metricScrapeInterval)
-		for {
-			select {
-			case <-m:
-				if !t.Stop() {
-					<-t.C
-				}
-				return
-			case <-t.C:
-				doMetricsScrape(uplinkName)
-				t.Reset(*metricScrapeInterval)
+
+	t := time.NewTimer(*metricScrapeInterval)
+	for {
+		select {
+		case <-ctx.Done():
+			if !t.Stop() {
+				<-t.C
 			}
+			return
+		case <-t.C:
+			doMetricsScrape(uplinkName)
+			t.Reset(*metricScrapeInterval)
 		}
-	}()
+	}
 }
 
 func doMetricsScrape(uplinkName string) {
