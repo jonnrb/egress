@@ -14,4 +14,4 @@ pretty well in that scenario, but I'm going to try and make this work on a
 Kubernetes system, which requires a bit more thought to do correctly.
 
 The resulting containers are built in
-[https://git.jonnrb.com/git/network\_containers](https://git.jonnrb.com/git/network_containers).
+[https://git.jonnrb.com/jon/network\_containers](https://git.jonnrb.com/jon/network_containers).
