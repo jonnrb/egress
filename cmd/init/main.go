@@ -27,6 +27,11 @@ var (
 	tunCreateName = flag.String("create_tun", "", "If set, creates a tun interface with the specified name (to be used with -docker.uplink_interface and probably a VPN client")
 	cmd           = flag.String("c", "", "Command to run after initialization")
 	httpAddr      = flag.String("http.addr", "0.0.0.0:8080", "Port to serve metrics and health status on")
+
+	lanNetwork          = flag.String("docker.lan_network", "", "Container network that this container will act as the gateway for")
+	flatNetworks        = flag.String("docker.flat_networks", "", "CSV of container networks that this container will forward to (not masqueraded)")
+	uplinkNetwork       = flag.String("docker.uplink_network", "", "Container network used for uplink (connections will be masqueraded)")
+	uplinkInterfaceName = flag.String("docker.uplink_interface", "", "Interface used for uplink (connections will be masqueraded)")
 )
 
 func main() {
@@ -69,11 +74,18 @@ func main() {
 		log.Fatalf("error creating networks: %v", err)
 	}
 
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	log.V(2).Infof("docker.GetConfig()")
-	cfg, err := docker.GetConfig()
+	cfg, err := docker.GetConfig(ctx, docker.Params{
+		LANNetwork:      *lanNetwork,
+		FlatNetworks:    strings.Split(*flatNetworks, ","),
+		UplinkNetwork:   *uplinkNetwork,
+		UplinkInterface: *uplinkInterfaceName,
+	})
 	if err != nil {
 		log.Fatalf("error initializing network configuration: %v", err)
 	}
+	cancel()
 
 	l, err := net.Listen("tcp", *httpAddr)
 	if err != nil {
@@ -102,7 +114,7 @@ func main() {
 	hc := SetupHealthCheck()
 	defer hc.Close()
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel = context.WithCancel(context.Background())
 	defer cancel()
 
 	grp, ctx := errgroup.WithContext(ctx)
