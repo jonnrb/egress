@@ -13,70 +13,108 @@ import (
 	"time"
 
 	"github.com/google/shlex"
-	"github.com/vishvananda/netlink"
 	"go.jonnrb.io/egress/backend/docker"
 	"go.jonnrb.io/egress/fw"
 	"go.jonnrb.io/egress/fw/rules"
 	"go.jonnrb.io/egress/log"
 	"go.jonnrb.io/egress/metrics"
+	"go.jonnrb.io/egress/util"
 	"golang.org/x/sync/errgroup"
-	"golang.org/x/sys/unix"
-)
-
-var (
-	healthCheck   = flag.Bool("health_check", false, "If set, connects to the internal healthcheck endpoint and exits.")
-	tunCreateName = flag.String("create_tun", "", "If set, creates a tun interface with the specified name (to be used with -docker.uplink_interface and probably a VPN client")
-	cmd           = flag.String("c", "", "Command to run after initialization")
-	httpAddr      = flag.String("http.addr", "0.0.0.0:8080", "Port to serve metrics and health status on")
-
-	lanNetwork          = flag.String("docker.lan_network", "", "Container network that this container will act as the gateway for")
-	flatNetworks        = flag.String("docker.flat_networks", "", "CSV of container networks that this container will forward to (not masqueraded)")
-	uplinkNetwork       = flag.String("docker.uplink_network", "", "Container network used for uplink (connections will be masqueraded)")
-	uplinkInterfaceName = flag.String("docker.uplink_interface", "", "Interface used for uplink (connections will be masqueraded)")
 )
 
 func main() {
 	flag.Parse()
-
-	args := flag.Args()
+	args := processArgs()
 
 	if *healthCheck {
-		client := &http.Client{}
-		_, port, err := net.SplitHostPort(*httpAddr)
-		if err != nil {
-			fmt.Printf("bad address %q: %v\n", *httpAddr, err)
-			os.Exit(1)
-		}
-		resp, err := client.Get(fmt.Sprintf("http://localhost:%v/health", port))
-		if err != nil {
-			fmt.Printf("error connecting to healthcheck: %v\n", err)
-			os.Exit(1)
-		}
-		io.Copy(os.Stdout, resp.Body)
-		if resp.StatusCode != http.StatusOK {
-			os.Exit(resp.StatusCode)
-		}
+		healthCheckMain()
 		return
 	}
 
-	var err error
-	if *cmd != "" {
-		if len(args) > 0 {
-			log.Fatal("-c or an exec line; pick one")
-		}
-		args, err = shlex.Split(*cmd)
-		if err != nil {
-			log.Fatalf("error parsing shell command %q: %v", *cmd, err)
-		}
+	// Create things that aren't bound by the main context.Context.
+	maybeCreateNetworks()
+	cfg := getFWConfig()
+	httpCfg := listenHTTP()
+	applyFWRules(cfg, httpCfg)
+
+	// Create the root context.Context.
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	setupHTTPHandlers(ctx, cfg, httpCfg)
+
+	// TODO: Split this out so it can be put in setupHTTPHandlers.
+	hc := SetupHealthCheck()
+	defer hc.Close()
+
+	// Create the steady-state.
+	grp, ctx := errgroup.WithContext(ctx)
+	grp.Go(func() error {
+		return httpServeContext(ctx, httpCfg)
+	})
+	grp.Go(func() error {
+		return runSubprocess(ctx, args)
+	})
+	if err := grp.Wait(); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func healthCheckMain() {
+	client := &http.Client{}
+	_, port, err := net.SplitHostPort(*httpAddr)
+	if err != nil {
+		fmt.Printf("bad address %q: %v\n", *httpAddr, err)
+		os.Exit(1)
+	}
+	resp, err := client.Get(fmt.Sprintf("http://localhost:%v/health", port))
+	if err != nil {
+		fmt.Printf("error connecting to healthcheck: %v\n", err)
+		os.Exit(1)
+	}
+	io.Copy(os.Stdout, resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		os.Exit(resp.StatusCode)
+	}
+}
+
+func processArgs() []string {
+	args := flag.Args()
+	if *cmd == "" {
+		return args
 	}
 
-	log.V(2).Infof("MaybeCreateNetworks()")
-	if err := MaybeCreateNetworks(); err != nil {
-		log.Fatalf("error creating networks: %v", err)
+	if len(args) > 0 {
+		log.Fatal("Delegate process can be specifed by -c and a string or a list of args, but not both")
 	}
+
+	args, err := shlex.Split(*cmd)
+	if err != nil {
+		log.Fatalf("Error parsing shell command %q: %v", *cmd, err)
+	}
+
+	return args
+}
+
+func maybeCreateNetworks() {
+	tun := *tunCreateName
+	if tun == "" {
+		return
+	}
+
+	log.V(2).Infof("Attempting to create tunnel %q", tun)
+	err := util.CreateTun(tun)
+	if err != nil {
+		log.Fatalf("Could not create tunnel specified by -create_tun: %v", err)
+	}
+}
+
+func getFWConfig() fw.Config {
+	log.V(2).Info("Getting fw.Config")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	log.V(2).Infof("docker.GetConfig()")
+	defer cancel()
+
 	cfg, err := docker.GetConfig(ctx, docker.Params{
 		LANNetwork:      *lanNetwork,
 		FlatNetworks:    strings.Split(*flatNetworks, ","),
@@ -84,112 +122,76 @@ func main() {
 		UplinkInterface: *uplinkInterfaceName,
 	})
 	if err != nil {
-		log.Fatalf("error initializing network configuration: %v", err)
+		log.Fatalf("Error configuring router from Docker environment: %v", err)
 	}
-	cancel()
+	return cfg
+}
 
+type httpConfig struct {
+	listener     net.Listener
+	openPortRule rules.Rule
+}
+
+func listenHTTP() httpConfig {
 	l, err := net.Listen("tcp", *httpAddr)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("Could not listen on given -http.addr %q: %v", *httpAddr, err)
 	}
+	log.Infof("listening on %q", *httpAddr)
 
 	_, port, err := net.SplitHostPort(l.Addr().String())
 	if err != nil {
-		log.Fatal(err)
-	}
-	r := fw.OpenPort("tcp", port)
-
-	log.Infof("listening on %q", *httpAddr)
-
-	log.V(2).Infof("PatchIPTables()")
-	if err := fw.Apply(fw.WithExtraRules(cfg, rules.RuleSet{r})); err != nil {
-		log.Fatalf("error patching iptables: %v", err)
+		panic(err)
 	}
 
-	ctx, cancel = context.WithCancel(context.Background())
-	defer cancel()
+	return httpConfig{
+		listener:     l,
+		openPortRule: fw.OpenPort("tcp", port),
+	}
+}
 
+func applyFWRules(cfg fw.Config, httpCfg httpConfig) {
+	log.V(2).Info("Applying fw rules from environment")
+
+	extraRules := rules.RuleSet{httpCfg.openPortRule}
+	if err := fw.Apply(fw.WithExtraRules(cfg, extraRules)); err != nil {
+		log.Fatalf("Error applying fw rules: %v", err)
+	}
+}
+
+func setupHTTPHandlers(ctx context.Context, cfg fw.Config, httpCfg httpConfig) {
 	metricsHandler, err := metrics.New(ctx, metrics.Config{
 		UplinkName: cfg.Uplink().Name(),
 	})
 	if err != nil {
-		log.Fatalf("error setting up metrics: %v", err)
+		log.Fatalf("Error setting up metrics: %v", err)
 	}
 	http.Handle("/metrics", metricsHandler)
+}
 
-	hc := SetupHealthCheck()
-	defer hc.Close()
+func httpServeContext(ctx context.Context, cfg httpConfig) error {
+	go func() {
+		defer cfg.listener.Close()
+		<-ctx.Done()
+	}()
+	return http.Serve(cfg.listener, nil)
+}
 
-	grp, ctx := errgroup.WithContext(ctx)
-	grp.Go(func() error {
-		defer cancel()
-		go func() {
-			<-ctx.Done()
-			l.Close()
-		}()
-		return http.Serve(l, nil)
-	})
-	grp.Go(func() error {
-		defer cancel()
-
-		if len(args) > 0 {
-			log.Infof("running %q", strings.Join(args, " "))
-			cmd := exec.Command(args[0], args[1:]...)
-			cmd.Stdout = os.Stdout
-			cmd.Stderr = os.Stderr
-			if err := cmd.Start(); err != nil {
-				return fmt.Errorf("error starting subprocess: %v", err)
-			}
-			if err := ReapChildren(cmd.Process); err != nil {
-				return fmt.Errorf("error waiting for subprocess: %v", err)
-			}
-		} else {
-			log.Info("sleeping forever")
-			for {
-				time.Sleep(time.Duration(9223372036854775807))
-			}
+func runSubprocess(ctx context.Context, args []string) error {
+	if len(args) > 0 {
+		log.Infof("running %q", strings.Join(args, " "))
+		cmd := exec.Command(args[0], args[1:]...)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Start(); err != nil {
+			return fmt.Errorf("error starting subprocess: %v", err)
 		}
-		return nil
-	})
-
-	if err := grp.Wait(); err != nil {
-		log.Fatal(err)
-	}
-}
-
-func MaybeCreateNetworks() error {
-	if *tunCreateName == "" {
-		return nil
-	}
-
-	if err := maybeCreateDevNetTun(); err != nil {
-		return fmt.Errorf("error creating /dev/net/tun: %v", err)
-	}
-
-	la := netlink.NewLinkAttrs()
-	la.Name = *tunCreateName
-
-	link := &netlink.Tuntap{
-		LinkAttrs: la,
-		Mode:      netlink.TUNTAP_MODE_TUN,
-		Flags:     netlink.TUNTAP_DEFAULTS,
-	}
-
-	err := netlink.LinkAdd(link)
-	if err != nil {
-		return fmt.Errorf("error creating tun %q: %v", *tunCreateName, err)
-	}
-
-	return nil
-}
-
-func maybeCreateDevNetTun() error {
-	if err := os.Mkdir("/dev/net", os.FileMode(0755)); !os.IsExist(err) && err != nil {
-		return err
-	}
-	tunMode := uint32(020666)
-	if err := unix.Mknod("/dev/net/tun", tunMode, int(unix.Mkdev(10, 200))); !os.IsExist(err) && err != nil {
-		return err
+		if err := util.ReapChildren(cmd.Process); err != nil {
+			return fmt.Errorf("error waiting for subprocess: %v", err)
+		}
+	} else {
+		log.Info("sleeping forever")
+		<-ctx.Done()
 	}
 	return nil
 }
