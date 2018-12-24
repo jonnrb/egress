@@ -4,9 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net"
-	"os"
-	"strings"
 
 	"docker.io/go-docker"
 	"docker.io/go-docker/api/types"
@@ -21,6 +18,18 @@ type Params struct {
 	FlatNetworks    []string
 	UplinkNetwork   string
 	UplinkInterface string
+}
+
+func (params Params) check() error {
+	if params.LANNetwork == "" {
+		return errors.New("-docker.lan_network flag must be specified")
+	}
+
+	if params.UplinkNetwork == "" && params.UplinkInterface == "" {
+		return errors.New("-docker.uplink_network or -docker.uplink_interface must be specified")
+	}
+
+	return nil
 }
 
 type Config struct {
@@ -52,12 +61,8 @@ func (cfg *Config) ExtraRules() rules.RuleSet {
 }
 
 func GetConfig(ctx context.Context, params Params) (*Config, error) {
-	if params.LANNetwork == "" {
-		return nil, errors.New("-docker.lan_network flag must be specified")
-	}
-
-	if params.UplinkNetwork == "" && params.UplinkInterface == "" {
-		return nil, errors.New("-docker.uplink_network or -docker.uplink_interface must be specified")
+	if err := params.check(); err != nil {
+		return nil, err
 	}
 
 	cli, err := docker.NewEnvClient()
@@ -65,32 +70,59 @@ func GetConfig(ctx context.Context, params Params) (*Config, error) {
 		return nil, fmt.Errorf("error connecting to docker: %v", err)
 	}
 	defer cli.Close()
-
 	log.V(2).Info("connected to docker")
 
-	containerID, err := os.Hostname()
-	if err != nil {
-		return nil, fmt.Errorf("error getting hostname: %v", err)
-	}
-
-	containerJSON, err := cli.ContainerInspect(ctx, containerID)
-	if err != nil {
-		return nil, fmt.Errorf("cannot inspect container using id %q: %v", containerID, err)
-	}
-
-	lanInterface, err := findInterfaceByDockerNetwork(params.LANNetwork, containerJSON)
+	containerJSON, err := getContainerJSON(ctx, cli)
 	if err != nil {
 		return nil, err
 	}
 
+	return getConfigInternal(environment{ctx, params, containerJSON, cli})
+}
+
+// Environment bundle throughout ctx.
+type environment struct {
+	ctx           context.Context
+	params        Params
+	containerJSON *types.ContainerJSON
+	cli           *docker.Client
+}
+
+func getConfigInternal(env environment) (*Config, error) {
+	sr, err := extractStaticRoutes(env)
+	if err != nil {
+		return nil, err
+	}
+
+	uplinkInterface, err := getUplinkInterface(env)
+	if err != nil {
+		return nil, err
+	}
+
+	lanInterface, err := findInterfaceByDockerNetwork(env.params.LANNetwork, env.containerJSON)
+	if err != nil {
+		return nil, err
+	}
+
+	cfg := &Config{
+		lan:    lanInterface,
+		uplink: uplinkInterface,
+		flat:   sr,
+	}
+
+	log.V(2).Info("applying gateway hack")
+	return cfg, dockerGatewayHacky(env, lanInterface)
+}
+
+func extractStaticRoutes(env environment) ([]fw.StaticRoute, error) {
 	var sr []fw.StaticRoute
-	for _, flatNetwork := range params.FlatNetworks {
-		i, err := findInterfaceByDockerNetwork(flatNetwork, containerJSON)
+	for _, flatNetwork := range env.params.FlatNetworks {
+		i, err := findInterfaceByDockerNetwork(flatNetwork, env.containerJSON)
 		if err != nil {
 			return nil, err
 		}
 
-		n, err := cli.NetworkInspect(ctx, flatNetwork, types.NetworkInspectOptions{})
+		n, err := env.cli.NetworkInspect(env.ctx, flatNetwork, types.NetworkInspectOptions{})
 		if err != nil {
 			return nil, err
 		}
@@ -104,130 +136,21 @@ func GetConfig(ctx context.Context, params Params) (*Config, error) {
 			Subnet: subnet,
 		})
 	}
+	return sr, nil
+}
 
-	var uplinkInterface netlink.Link
-	if params.UplinkInterface != "" {
-		uplinkInterface, err = netlink.LinkByName(params.UplinkInterface)
+func getUplinkInterface(env environment) (l netlink.Link, err error) {
+	i, n := env.params.UplinkInterface, env.params.UplinkNetwork
+	if i != "" {
+		l, err = netlink.LinkByName(i)
 		if err != nil {
-			return nil, fmt.Errorf("could not get interface %q: %v", params.UplinkInterface, err)
+			err = fmt.Errorf("could not get interface %q: %v", i, err)
 		}
 	} else {
-		uplinkInterface, err = findInterfaceByDockerNetwork(params.UplinkNetwork, containerJSON)
+		l, err = findInterfaceByDockerNetwork(n, env.containerJSON)
 		if err != nil {
-			return nil, fmt.Errorf("could not get interface for container network %q: %v", params.UplinkNetwork, err)
+			err = fmt.Errorf("could not get interface for container network %q: %v", n, err)
 		}
 	}
-
-	log.V(2).Info("applying gateway hack")
-	if err := dockerGatewayHacky(ctx, params, lanInterface, cli); err != nil {
-		return nil, err
-	}
-
-	return &Config{
-		lan:    lanInterface,
-		uplink: uplinkInterface,
-		flat:   sr,
-	}, nil
-}
-
-// for macvlan networks: adds the gateway ip to the lan interface
-// for bridge networks: adds the "DefaultGatewayIPv4" aux-address to the lan interface
-// throws an error in any other case because there is no non-hacky way to run a container as a gateway as of now
-func dockerGatewayHacky(ctx context.Context, params Params, lan netlink.Link, cli *docker.Client) error {
-	networkJSON, err := cli.NetworkInspect(ctx, params.LANNetwork, types.NetworkInspectOptions{})
-
-	if err != nil {
-		return fmt.Errorf("error inspecting network %q: %v", params.LANNetwork, err)
-	}
-
-	if networkJSON.IPAM.Driver != "default" {
-		return fmt.Errorf("found unsupported ipam driver %q", networkJSON.IPAM.Driver)
-	}
-
-	switch networkJSON.Driver {
-	case "bridge":
-		found := false
-
-		for _, ipam := range networkJSON.IPAM.Config {
-			if gw, ok := ipam.AuxAddress["DefaultGatewayIPv4"]; ok {
-				found = true
-				var mask int
-				if a := strings.Split(ipam.Subnet, "/"); len(a) != 2 {
-					return fmt.Errorf("error parsing subnet %q: wrong format %v", ipam.Subnet, a)
-				} else if n, err := fmt.Sscanf(a[1], "%d", &mask); n != 1 {
-					return fmt.Errorf("error parsing subnet %q: wrong format %q", ipam.Subnet, a[1])
-				} else if err != nil {
-					return fmt.Errorf("error parsing subnet %q: %v", ipam.Subnet, err)
-				}
-				s := fmt.Sprintf("%s/%d", gw, mask)
-				if addr, err := netlink.ParseAddr(s); err != nil {
-					return fmt.Errorf("error parsing address %q: %v", s, err)
-				} else if err = netlink.AddrAdd(lan, addr); err != nil {
-					return fmt.Errorf("error adding address %q to lan: %v", s, err)
-				}
-				log.V(2).Infof("added address %q to lan interface", s)
-			}
-		}
-
-		if !found {
-			return errors.New("did not find a suitable ipam on the bridge; DefaultGatewayIPv4 must be set as an aux-address")
-		}
-	case "macvlan":
-		for _, ipam := range networkJSON.IPAM.Config {
-			var mask int
-			if a := strings.Split(ipam.Subnet, "/"); len(a) != 2 {
-				return fmt.Errorf("error parsing subnet %q: wrong format %v", ipam.Subnet, a)
-			} else if n, err := fmt.Sscanf(a[1], "%d", &mask); n != 1 {
-				return fmt.Errorf("error parsing subnet %q: wrong format %q", ipam.Subnet, a[1])
-			} else if err != nil {
-				return fmt.Errorf("error parsing subnet %q: %v", ipam.Subnet, err)
-			}
-			s := fmt.Sprintf("%s/%d", ipam.Gateway, mask)
-			if addr, err := netlink.ParseAddr(s); err != nil {
-				return fmt.Errorf("error parsing address %q: %v", s, err)
-			} else if err = netlink.AddrAdd(lan, addr); err != nil {
-				return fmt.Errorf("error adding address %q to lan: %v", s, err)
-			}
-			log.V(2).Infof("added address %q to lan interface", s)
-		}
-	default:
-		return fmt.Errorf("found unsupported lan network driver for gateway hack: %q", networkJSON.Driver)
-	}
-
-	return nil
-}
-
-func findInterfaceByDockerNetwork(dnet string, j types.ContainerJSON) (netlink.Link, error) {
-	n, ok := j.NetworkSettings.Networks[dnet]
-	if !ok {
-		return nil, fmt.Errorf("network %q not found on container info", dnet)
-	}
-
-	ip := net.ParseIP(n.IPAddress)
-	if ip == nil {
-		return nil, fmt.Errorf("could not parse conatiner ip address %q", n.IPAddress)
-	}
-
-	return linkForIP(ip)
-}
-
-func linkForIP(ip net.IP) (netlink.Link, error) {
-	links, err := netlink.LinkList()
-	if err != nil {
-		return nil, fmt.Errorf("error listing network links: %v", err)
-	}
-
-	for _, link := range links {
-		addrs, err := netlink.AddrList(link, netlink.FAMILY_ALL)
-		if err != nil {
-			return nil, fmt.Errorf("error listing addrs on %q: %v", link.Attrs().Name, err)
-		}
-		for _, addr := range addrs {
-			if addr.IPNet.IP.Equal(ip) {
-				return link, nil
-			}
-		}
-	}
-
-	return nil, fmt.Errorf("could not find link for ip %v", ip)
+	return
 }
