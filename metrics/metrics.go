@@ -8,7 +8,6 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"go.jonnrb.io/egress/fw"
 	"go.jonnrb.io/egress/log"
 )
 
@@ -30,8 +29,12 @@ var (
 		"How often to scrape metrics from the kernel.")
 )
 
+type Config struct {
+	UplinkName string
+}
+
 // Returns a metrics handler that will scrape metrics during ctx.
-func New(ctx context.Context, cfg fw.Config) (http.Handler, error) {
+func New(ctx context.Context, cfg Config) (http.Handler, error) {
 	if err := prometheus.Register(metricReceiveBytes); err != nil {
 		return nil, err
 	}
@@ -39,7 +42,7 @@ func New(ctx context.Context, cfg fw.Config) (http.Handler, error) {
 		return nil, err
 	}
 
-	go scrapeOnInterval(ctx, cfg.Uplink().Name())
+	go scrapeOnInterval(ctx, cfg.UplinkName)
 
 	return promhttp.Handler(), nil
 }

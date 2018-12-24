@@ -109,7 +109,9 @@ func main() {
 	ctx, cancel = context.WithCancel(context.Background())
 	defer cancel()
 
-	metricsHandler, err := metrics.New(ctx, cfg)
+	metricsHandler, err := metrics.New(ctx, metrics.Config{
+		UplinkName: cfg.Uplink().Name(),
+	})
 	if err != nil {
 		log.Fatalf("error setting up metrics: %v", err)
 	}
