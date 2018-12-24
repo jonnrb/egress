@@ -47,17 +47,14 @@ func New(ctx context.Context, cfg fw.Config) (http.Handler, error) {
 func scrapeOnInterval(ctx context.Context, uplinkName string) {
 	log.V(2).Infof("scraping metrics every %v", *metricScrapeInterval)
 
-	t := time.NewTimer(*metricScrapeInterval)
+	t := time.NewTicker(*metricScrapeInterval)
+	defer t.Stop()
 	for {
 		select {
 		case <-ctx.Done():
-			if !t.Stop() {
-				<-t.C
-			}
 			return
 		case <-t.C:
 			doMetricsScrape(uplinkName)
-			t.Reset(*metricScrapeInterval)
 		}
 	}
 }
