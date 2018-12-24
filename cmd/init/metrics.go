@@ -11,9 +11,10 @@ import (
 	"strings"
 	"time"
 
-	"go.jonnrb.io/egress/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.jonnrb.io/egress/fw"
+	"go.jonnrb.io/egress/log"
 )
 
 const (
@@ -35,9 +36,9 @@ var (
 		"How often to scrape metrics from the kernel.")
 )
 
-type NetMetricsScraper chan interface{}
+type metricsScraper chan interface{}
 
-func SetupMetrics(config *RouterConfiguration) (io.Closer, error) {
+func SetupMetrics(cfg fw.Config) (io.Closer, error) {
 	if err := prometheus.Register(metricReceiveBytes); err != nil {
 		return nil, err
 	}
@@ -48,19 +49,19 @@ func SetupMetrics(config *RouterConfiguration) (io.Closer, error) {
 
 	http.Handle("/metrics", promhttp.Handler())
 
-	var scraper NetMetricsScraper = make(chan interface{})
-	scraper.ScrapeOnInterval(config)
+	scraper := metricsScraper(make(chan interface{}))
+	scraper.scrapeOnInterval(cfg.Uplink().Name())
 
 	return scraper, nil
 }
 
-func (m NetMetricsScraper) Close() error {
+func (m metricsScraper) Close() error {
 	m <- nil
 	close(m)
 	return nil
 }
 
-func (m NetMetricsScraper) ScrapeOnInterval(config *RouterConfiguration) {
+func (m metricsScraper) scrapeOnInterval(uplinkName string) {
 	log.V(2).Infof("scraping metrics every %v", *metricScrapeInterval)
 	go func() {
 		t := time.NewTimer(*metricScrapeInterval)
@@ -72,24 +73,23 @@ func (m NetMetricsScraper) ScrapeOnInterval(config *RouterConfiguration) {
 				}
 				return
 			case <-t.C:
-				DoMetricsScrape(config)
+				doMetricsScrape(uplinkName)
 				t.Reset(*metricScrapeInterval)
 			}
 		}
 	}()
 }
 
-func DoMetricsScrape(config *RouterConfiguration) {
+func doMetricsScrape(uplinkName string) {
 	stats, err := getNetDevStats()
 	if err != nil {
 		log.Errorf("error scraping network stats: %v", err)
 		return
 	}
 
-	iface := config.uplinkInterface.Attrs().Name
-	ifaceStats, ok := stats[iface]
+	ifaceStats, ok := stats[uplinkName]
 	if !ok {
-		log.Errorf("iface %q not found in kernel network stats table", iface)
+		log.Errorf("iface %q not found in kernel network stats table", uplinkName)
 		return
 	}
 

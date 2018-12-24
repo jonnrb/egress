@@ -14,6 +14,8 @@ import (
 
 	"github.com/kballard/go-shellquote"
 	"github.com/vishvananda/netlink"
+	"go.jonnrb.io/egress/fw"
+	"go.jonnrb.io/egress/fw/rules"
 	"go.jonnrb.io/egress/log"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
@@ -25,17 +27,6 @@ var (
 	cmd           = flag.String("c", "", "Command to run after initialization")
 	httpAddr      = flag.String("http.addr", "0.0.0.0:8080", "Port to serve metrics and health status on")
 )
-
-type StaticRoute struct {
-	iface  netlink.Link
-	subnet string
-}
-
-type RouterConfiguration struct {
-	lanInterface    netlink.Link
-	flatNetworks    []StaticRoute
-	uplinkInterface netlink.Link
-}
 
 func main() {
 	flag.Parse()
@@ -78,17 +69,30 @@ func main() {
 	}
 
 	log.V(2).Infof("InitFromContainerEnvironment()")
-	conf, err := InitFromContainerEnvironment()
+	cfg, err := InitFromContainerEnvironment()
 	if err != nil {
 		log.Fatalf("error initializing network configuration: %v", err)
 	}
 
+	l, err := net.Listen("tcp", *httpAddr)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	_, port, err := net.SplitHostPort(l.Addr().String())
+	if err != nil {
+		log.Fatal(err)
+	}
+	r := fw.OpenPort("tcp", port)
+
+	log.Infof("listening on %q", *httpAddr)
+
 	log.V(2).Infof("PatchIPTables()")
-	if err := conf.PatchIPTables(); err != nil {
+	if err := fw.Apply(fw.WithExtraRules(cfg, rules.RuleSet{r})); err != nil {
 		log.Fatalf("error patching iptables: %v", err)
 	}
 
-	scraper, err := SetupMetrics(conf)
+	scraper, err := SetupMetrics(cfg)
 	if err != nil {
 		log.Fatalf("error setting up metrics: %v", err)
 	}
@@ -103,24 +107,10 @@ func main() {
 	grp, ctx := errgroup.WithContext(ctx)
 	grp.Go(func() error {
 		defer cancel()
-
-		l, err := net.Listen("tcp", *httpAddr)
-		if err != nil {
-			return fmt.Errorf("wtf: %v", err)
-		}
 		go func() {
 			<-ctx.Done()
 			l.Close()
 		}()
-
-		_, port, err := net.SplitHostPort(l.Addr().String())
-		if err != nil {
-			return fmt.Errorf("wtf: %v", err)
-		}
-		OpenPort("tcp", port)
-
-		log.Infof("listening on %q", *httpAddr)
-
 		return http.Serve(l, nil)
 	})
 	grp.Go(func() error {

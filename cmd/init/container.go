@@ -12,6 +12,8 @@ import (
 	"docker.io/go-docker"
 	"docker.io/go-docker/api/types"
 	"github.com/vishvananda/netlink"
+	"go.jonnrb.io/egress/fw"
+	"go.jonnrb.io/egress/fw/rules"
 	"go.jonnrb.io/egress/log"
 )
 
@@ -22,18 +24,48 @@ var (
 	uplinkInterfaceName = flag.String("docker.uplink_interface", "", "Interface used for uplink (connections will be masqueraded)")
 )
 
-func InitFromContainerEnvironment() (*RouterConfiguration, error) {
+type config struct {
+	lan    netlink.Link
+	uplink netlink.Link
+	flat   []fw.StaticRoute
+}
+
+type link struct{ *netlink.LinkAttrs }
+
+func (l link) Name() string {
+	return l.LinkAttrs.Name
+}
+
+func (cfg config) LAN() fw.Link {
+	return link{cfg.lan.Attrs()}
+}
+
+func (cfg config) Uplink() fw.Link {
+	return link{cfg.uplink.Attrs()}
+}
+
+func (cfg config) FlatNetworks() []fw.StaticRoute {
+	return cfg.flat
+}
+
+func (cfg config) ExtraRules() rules.RuleSet {
+	return nil
+}
+
+func InitFromContainerEnvironment() (config, error) {
+	var cfg config
+
 	if *lanNetwork == "" {
-		return nil, errors.New("-docker.lan_network flag must be specified")
+		return cfg, errors.New("-docker.lan_network flag must be specified")
 	}
 
 	if *uplinkNetwork == "" && *uplinkInterfaceName == "" {
-		return nil, errors.New("-docker.uplink_network or -docker.uplink_interface must be specified")
+		return cfg, errors.New("-docker.uplink_network or -docker.uplink_interface must be specified")
 	}
 
 	cli, err := docker.NewEnvClient()
 	if err != nil {
-		return nil, fmt.Errorf("error connecting to docker: %v", err)
+		return cfg, fmt.Errorf("error connecting to docker: %v", err)
 	}
 	defer cli.Close()
 
@@ -41,39 +73,39 @@ func InitFromContainerEnvironment() (*RouterConfiguration, error) {
 
 	containerID, err := os.Hostname()
 	if err != nil {
-		return nil, fmt.Errorf("error getting hostname: %v", err)
+		return cfg, fmt.Errorf("error getting hostname: %v", err)
 	}
 
 	containerJSON, err := cli.ContainerInspect(context.TODO(), containerID)
 	if err != nil {
-		return nil, fmt.Errorf("cannot inspect container using id %q: %v", containerID, err)
+		return cfg, fmt.Errorf("cannot inspect container using id %q: %v", containerID, err)
 	}
 
 	lanInterface, err := findInterfaceByDockerNetwork(*lanNetwork, containerJSON)
 	if err != nil {
-		return nil, err
+		return cfg, err
 	}
 
-	var sr []StaticRoute
+	var sr []fw.StaticRoute
 	if *flatNetworks != "" {
 		for _, flatNetwork := range strings.Split(*flatNetworks, ",") {
 			i, err := findInterfaceByDockerNetwork(flatNetwork, containerJSON)
 			if err != nil {
-				return nil, err
+				return cfg, err
 			}
 
 			n, err := cli.NetworkInspect(context.TODO(), flatNetwork, types.NetworkInspectOptions{})
 			if err != nil {
-				return nil, err
+				return cfg, err
 			}
 			if len(n.IPAM.Config) != 1 {
-				return nil, fmt.Errorf("expected 1 IPAM config; got: %v", n.IPAM.Config)
+				return cfg, fmt.Errorf("expected 1 IPAM config; got: %v", n.IPAM.Config)
 			}
 			subnet := n.IPAM.Config[0].Subnet
 
-			sr = append(sr, StaticRoute{
-				iface:  i,
-				subnet: subnet,
+			sr = append(sr, fw.StaticRoute{
+				Link:   link{i.Attrs()},
+				Subnet: subnet,
 			})
 		}
 	}
@@ -82,24 +114,24 @@ func InitFromContainerEnvironment() (*RouterConfiguration, error) {
 	if *uplinkInterfaceName != "" {
 		uplinkInterface, err = netlink.LinkByName(*uplinkInterfaceName)
 		if err != nil {
-			return nil, fmt.Errorf("could not get interface %q: %v", *uplinkInterfaceName, err)
+			return cfg, fmt.Errorf("could not get interface %q: %v", *uplinkInterfaceName, err)
 		}
 	} else {
 		uplinkInterface, err = findInterfaceByDockerNetwork(*uplinkNetwork, containerJSON)
 		if err != nil {
-			return nil, fmt.Errorf("could not get interface for container network %q: %v", *uplinkNetwork, err)
+			return cfg, fmt.Errorf("could not get interface for container network %q: %v", *uplinkNetwork, err)
 		}
 	}
 
 	log.V(2).Info("applying gateway hack")
 	if err := dockerGatewayHacky(lanInterface, cli); err != nil {
-		return nil, err
+		return cfg, err
 	}
 
-	return &RouterConfiguration{
-		lanInterface:    lanInterface,
-		flatNetworks:    sr,
-		uplinkInterface: uplinkInterface,
+	return config{
+		lan:    lanInterface,
+		uplink: uplinkInterface,
+		flat:   sr,
 	}, nil
 }
 
