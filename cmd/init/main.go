@@ -127,6 +127,7 @@ func getFWConfig() fw.Config {
 type httpConfig struct {
 	listener     net.Listener
 	openPortRule rules.Rule
+	mux          *http.ServeMux
 }
 
 func listenHTTP() httpConfig {
@@ -144,6 +145,7 @@ func listenHTTP() httpConfig {
 	return httpConfig{
 		listener:     l,
 		openPortRule: fw.OpenPort("tcp", port),
+		mux:          http.NewServeMux(),
 	}
 }
 
@@ -163,17 +165,30 @@ func setupHTTPHandlers(ctx context.Context, cfg fw.Config, httpCfg httpConfig) {
 	if err != nil {
 		log.Fatalf("Error setting up metrics: %v", err)
 	}
-	http.Handle("/metrics", metricsHandler)
 
-	http.Handle("/healthz", health.New(ctx))
+	httpCfg.mux.Handle("/metrics", metricsHandler)
+	httpCfg.mux.Handle("/healthz", health.New(ctx))
 }
 
 func httpServeContext(ctx context.Context, cfg httpConfig) error {
+	s := http.Server{
+		Handler: cfg.mux,
+
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 30 * time.Second,
+		IdleTimeout:  30 * time.Second,
+	}
+
 	go func() {
-		defer cfg.listener.Close()
+		defer s.Close()
 		<-ctx.Done()
 	}()
-	return http.Serve(cfg.listener, nil)
+
+	err := s.Serve(cfg.listener)
+	if err == http.ErrServerClosed {
+		err = nil
+	}
+	return err
 }
 
 func runSubprocess(ctx context.Context, args []string) error {
