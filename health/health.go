@@ -1,4 +1,4 @@
-package main
+package health
 
 import (
 	"context"
@@ -14,20 +14,17 @@ type HealthChecker struct {
 	c chan chan error
 }
 
-func SetupHealthCheck() io.Closer {
+func New(ctx context.Context) *HealthChecker {
 	hc := &HealthChecker{
 		c: make(chan chan error),
 	}
-	go hc.loop()
-
-	http.HandleFunc("/health", hc.Handler)
-
+	go hc.loop(ctx)
 	return hc
 }
 
-func (hc *HealthChecker) Handler(w http.ResponseWriter, r *http.Request) {
-	ctx, cls := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cls()
+func (hc *HealthChecker) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 
 	var err error
 	c := make(chan error, 1)
@@ -43,26 +40,22 @@ func (hc *HealthChecker) Handler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err != nil {
-		w.WriteHeader(http.StatusServiceUnavailable)
+		w.WriteHeader(http.StatusInternalServerError)
 		io.WriteString(w, fmt.Sprintf("%v\n", err.Error()))
 	} else {
-		w.WriteHeader(http.StatusOK)
 		io.WriteString(w, "OK\n")
 	}
 }
 
-func (hc *HealthChecker) Close() error {
-	close(hc.c)
-	return nil
-}
-
-func (hc *HealthChecker) loop() {
+func (hc *HealthChecker) loop(ctx context.Context) {
 	for ret := range hc.c {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
+		func() {
+			ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+			defer cancel()
 
-		err := httpHeadCheck(ctx)
-		ret <- err
+			err := httpHeadCheck(ctx)
+			ret <- err
+		}()
 	}
 }
 

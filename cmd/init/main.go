@@ -16,6 +16,7 @@ import (
 	"go.jonnrb.io/egress/backend/docker"
 	"go.jonnrb.io/egress/fw"
 	"go.jonnrb.io/egress/fw/rules"
+	"go.jonnrb.io/egress/health"
 	"go.jonnrb.io/egress/log"
 	"go.jonnrb.io/egress/metrics"
 	"go.jonnrb.io/egress/util"
@@ -43,10 +44,6 @@ func main() {
 
 	setupHTTPHandlers(ctx, cfg, httpCfg)
 
-	// TODO: Split this out so it can be put in setupHTTPHandlers.
-	hc := SetupHealthCheck()
-	defer hc.Close()
-
 	// Create the steady-state.
 	grp, ctx := errgroup.WithContext(ctx)
 	grp.Go(func() error {
@@ -67,7 +64,7 @@ func healthCheckMain() {
 		fmt.Printf("bad address %q: %v\n", *httpAddr, err)
 		os.Exit(1)
 	}
-	resp, err := client.Get(fmt.Sprintf("http://localhost:%v/health", port))
+	resp, err := client.Get(fmt.Sprintf("http://localhost:%v/healthz", port))
 	if err != nil {
 		fmt.Printf("error connecting to healthcheck: %v\n", err)
 		os.Exit(1)
@@ -167,6 +164,8 @@ func setupHTTPHandlers(ctx context.Context, cfg fw.Config, httpCfg httpConfig) {
 		log.Fatalf("Error setting up metrics: %v", err)
 	}
 	http.Handle("/metrics", metricsHandler)
+
+	http.Handle("/healthz", health.New(ctx))
 }
 
 func httpServeContext(ctx context.Context, cfg httpConfig) error {
