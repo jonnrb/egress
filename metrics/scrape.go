@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	PROC_NET_DEV = "/proc/net/dev"
+	kProcNetDev = "/proc/net/dev"
 )
 
 func doMetricsScrape(m metrics, uplinkName string) {
@@ -43,7 +43,7 @@ func doMetricsScrape(m metrics, uplinkName string) {
 }
 
 func getNetDevStats() (map[string]map[string]int64, error) {
-	file, err := os.Open(PROC_NET_DEV)
+	file, err := os.Open(kProcNetDev)
 	if err != nil {
 		return nil, err
 	}
@@ -53,12 +53,12 @@ func getNetDevStats() (map[string]map[string]int64, error) {
 
 	// scan two lines (the weird looking headers)
 	if !scanner.Scan() || !scanner.Scan() {
-		return nil, fmt.Errorf("bad %v", PROC_NET_DEV)
+		return nil, fmt.Errorf("bad %v", kProcNetDev)
 	}
 
 	headerParts := strings.Split(scanner.Text(), "|")
 	if len(headerParts) != 3 {
-		return nil, fmt.Errorf("bad header line in %v: %q", PROC_NET_DEV, scanner.Text())
+		return nil, fmt.Errorf("bad header line in %v: %q", kProcNetDev, scanner.Text())
 	}
 	rHeader, tHeader := strings.Fields(headerParts[1]), strings.Fields(headerParts[2])
 
