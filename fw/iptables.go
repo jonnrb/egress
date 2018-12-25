@@ -11,8 +11,9 @@ import (
 
 var iptablesBin = flag.String("iptables.bin", "/sbin/iptables", "Path to iptables binary")
 
-func applyRuleSet(rs rules.RuleSet) error {
-	for _, r := range rs {
+// Applies a set of iptables rules in order.
+func ApplyRules(iptablesRules rules.RuleSet) error {
+	for _, r := range iptablesRules {
 		log.V(3).Infof("Applying rule %q", r)
 		if err := runIptables(r); err != nil {
 			return err

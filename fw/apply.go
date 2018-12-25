@@ -4,8 +4,9 @@ import (
 	"go.jonnrb.io/egress/fw/rules"
 )
 
+// Creates a RuleSet from cfg and applies it.
 func Apply(cfg Config) error {
-	return applyRuleSet(
+	return ApplyRules(
 		rules.NewBuilder().
 			Apply(rules.BaseRules).
 			Apply(addFlatNetworkForwarding(cfg)).
