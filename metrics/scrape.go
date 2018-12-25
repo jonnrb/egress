@@ -14,7 +14,7 @@ const (
 	PROC_NET_DEV = "/proc/net/dev"
 )
 
-func doMetricsScrape(uplinkName string) {
+func doMetricsScrape(m metrics, uplinkName string) {
 	stats, err := getNetDevStats()
 	if err != nil {
 		log.Errorf("error scraping network stats: %v", err)
@@ -32,14 +32,14 @@ func doMetricsScrape(uplinkName string) {
 		log.Error("could not find receive_bytes stat")
 		return
 	}
-	metricReceiveBytes.Set(float64(receiveBytes))
+	m.receiveBytes.Set(float64(receiveBytes))
 
 	transmitBytes, ok := ifaceStats["transmit_bytes"]
 	if !ok {
 		log.Error("could not find transmit_bytes stat")
 		return
 	}
-	metricTransmitBytes.Set(float64(transmitBytes))
+	m.transmitBytes.Set(float64(transmitBytes))
 }
 
 func getNetDevStats() (map[string]map[string]int64, error) {

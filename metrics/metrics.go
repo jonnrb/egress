@@ -12,17 +12,6 @@ import (
 )
 
 var (
-	metricReceiveBytes = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "uplink_network_receive_bytes",
-		Help: "Counter reporting receive bytes on the uplink interface.",
-	})
-	metricTransmitBytes = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "uplink_network_transmit_bytes",
-		Help: "Counter reporting transmit bytes on the uplink interface.",
-	})
-)
-
-var (
 	metricScrapeInterval = flag.Duration(
 		"metrics.scrape_interval",
 		5*time.Second,
@@ -33,21 +22,38 @@ type Config struct {
 	UplinkName string
 }
 
-// Returns a metrics handler that will scrape metrics during ctx.
-func New(ctx context.Context, cfg Config) (http.Handler, error) {
-	if err := prometheus.Register(metricReceiveBytes); err != nil {
-		return nil, err
-	}
-	if err := prometheus.Register(metricTransmitBytes); err != nil {
-		return nil, err
-	}
-
-	go scrapeOnInterval(ctx, cfg.UplinkName)
-
-	return promhttp.Handler(), nil
+type metrics struct {
+	receiveBytes  prometheus.Gauge
+	transmitBytes prometheus.Gauge
 }
 
-func scrapeOnInterval(ctx context.Context, uplinkName string) {
+// Returns a metrics handler that will scrape metrics during ctx.
+func New(ctx context.Context, cfg Config) (http.Handler, error) {
+	m := metrics{
+		receiveBytes: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "uplink_network_receive_bytes",
+			Help: "Counter reporting receive bytes on the uplink interface.",
+		}),
+		transmitBytes: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "uplink_network_transmit_bytes",
+			Help: "Counter reporting transmit bytes on the uplink interface.",
+		}),
+	}
+
+	r := prometheus.NewRegistry()
+	if err := r.Register(m.receiveBytes); err != nil {
+		return nil, err
+	}
+	if err := r.Register(m.transmitBytes); err != nil {
+		return nil, err
+	}
+
+	go scrapeOnInterval(ctx, m, cfg.UplinkName)
+
+	return promhttp.HandlerFor(r, promhttp.HandlerOpts{}), nil
+}
+
+func scrapeOnInterval(ctx context.Context, m metrics, uplinkName string) {
 	log.V(2).Infof("scraping metrics every %v", *metricScrapeInterval)
 
 	t := time.NewTicker(*metricScrapeInterval)
@@ -57,7 +63,7 @@ func scrapeOnInterval(ctx context.Context, uplinkName string) {
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			doMetricsScrape(uplinkName)
+			doMetricsScrape(m, uplinkName)
 		}
 	}
 }
