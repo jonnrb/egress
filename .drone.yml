@@ -7,16 +7,6 @@ platform:
   arch: amd64
 
 steps:
-- name: cache-restore
-  image: drillster/drone-volume-cache:latest
-  settings:
-    mount:
-    - /drone/docker
-    restore: true
-  volumes:
-  - name: cache
-    path: /cache
-
 - name: quay.io/jonnrb/egress
   image: plugins/docker
   settings:
@@ -24,9 +14,7 @@ steps:
       from_secret: quay_password
     registry: quay.io
     repo: quay.io/jonnrb/egress
-    storage_path: /drone/docker
     target: egress
-    use_cache: true
     username:
       from_secret: quay_username
 
@@ -37,21 +25,10 @@ steps:
       from_secret: quay_password
     registry: quay.io
     repo: quay.io/jonnrb/egress-openvpn
-    storage_path: /drone/docker
     target: egress-openvpn
     use_cache: true
     username:
       from_secret: quay_username
-
-- name: cache-rebuild
-  image: drillster/drone-volume-cache:latest
-  settings:
-    mount:
-    - /drone/docker
-    rebuild: true
-  volumes:
-  - name: cache
-    path: /cache
 
 - name: notify-slack
   image: plugins/slack
@@ -62,10 +39,5 @@ steps:
     status:
     - success
     - failure
-
-volumes:
-- name: cache
-  host:
-    path: "/mnt/disk1/@drone-cache"
 
 ...
