@@ -66,6 +66,6 @@ steps:
 volumes:
 - name: cache
   host:
-    path: "/mnt/disk1/@drone-cache:/cache"
+    path: "/mnt/disk1/@drone-cache"
 
 ...
