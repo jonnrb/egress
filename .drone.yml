@@ -56,7 +56,6 @@ steps:
 - name: notify-slack
   image: plugins/slack
   settings:
-    channel: dev
     webhook:
       from_secret: slack_webhook
   when:
