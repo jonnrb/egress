@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"time"
 
 	cnitypes "github.com/containernetworking/cni/pkg/types"
 )
@@ -33,7 +34,23 @@ type Attachment struct {
 // [1] https://kubernetes.io/docs/tasks/inject-data-application/downward-api-volume-expose-pod-information/
 //
 func GetAttachments() ([]Attachment, error) {
-	const path = "/etc/podinfo/attachments"
+	return getAttachmentsInternal("/etc/podinfo/attachments")
+}
+
+func getAttachmentsInternal(path string) (attachments []Attachment, err error) {
+	// Do a backoff on the path.
+	for backoff := 100 * time.Millisecond; backoff < time.Second; backoff = backoff * 2 {
+		attachments, err = tryGetAttachments(path)
+		if err == nil {
+			return
+		}
+		time.Sleep(backoff)
+	}
+	attachments, err = tryGetAttachments(path)
+	return
+}
+
+func tryGetAttachments(path string) ([]Attachment, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("error opening %q: %v", path, err)
