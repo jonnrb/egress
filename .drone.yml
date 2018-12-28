@@ -10,9 +10,9 @@ steps:
 - name: cache-restore
   image: drillster/drone-volume-cache:latest
   settings:
-    restore: true
     mount:
     - /drone/docker
+    restore: true
     volumes:
     - dev_drone_cache:/cache
 
@@ -23,10 +23,10 @@ steps:
       from_secret: quay_password
     registry: quay.io
     repo: quay.io/jonnrb/egress
-    username:
-      from_secret: quay_username
     storage_path: /drone/docker
     use_cache: true
+    username:
+      from_secret: quay_username
 
 - name: quay.io/jonnrb/egress-openvpn
   image: plugins/docker
@@ -35,17 +35,17 @@ steps:
       from_secret: quay_password
     registry: quay.io
     repo: quay.io/jonnrb/egress-openvpn
-    username:
-      from_secret: quay_username
     storage_path: /drone/docker
     use_cache: true
+    username:
+      from_secret: quay_username
 
 - name: cache-rebuild
   image: drillster/drone-volume-cache:latest
   settings:
-    rebuild: true
     mount:
     - /drone/docker
+    rebuild: true
     volumes:
     - dev_drone_cache:/cache
 
