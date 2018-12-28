@@ -24,6 +24,7 @@ steps:
     registry: quay.io
     repo: quay.io/jonnrb/egress
     storage_path: /drone/docker
+    target: egress
     use_cache: true
     username:
       from_secret: quay_username
@@ -36,6 +37,7 @@ steps:
     registry: quay.io
     repo: quay.io/jonnrb/egress-openvpn
     storage_path: /drone/docker
+    target: egress-openvpn
     use_cache: true
     username:
       from_secret: quay_username
