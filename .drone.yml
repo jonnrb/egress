@@ -14,8 +14,6 @@ steps:
     - /drone/docker
     restore: true
   volumes:
-  - name: docker
-    path: /drone/docker
   - name: cache
     path: /cache
 
@@ -31,9 +29,6 @@ steps:
     use_cache: true
     username:
       from_secret: quay_username
-  volumes:
-  - name: docker
-    path: /drone/docker
 
 - name: quay.io/jonnrb/egress-openvpn
   image: plugins/docker
@@ -47,9 +42,6 @@ steps:
     use_cache: true
     username:
       from_secret: quay_username
-  volumes:
-  - name: docker
-    path: /drone/docker
 
 - name: cache-rebuild
   image: drillster/drone-volume-cache:latest
@@ -58,8 +50,6 @@ steps:
     - /drone/docker
     rebuild: true
   volumes:
-  - name: docker
-    path: /drone/docker
   - name: cache
     path: /cache
 
@@ -78,6 +68,5 @@ volumes:
 - name: cache
   host:
     path: "/mnt/disk1/@drone-cache:/cache"
-- name: docker
 
 ...
