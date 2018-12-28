@@ -12,6 +12,8 @@ func BaseRules(b RuleSetBuilder) {
 }
 
 var policyRules = []Rule{
+	Rule("-F"),
+	Rule("-X"),
 	Rule("-t filter -P INPUT DROP"),
 	Rule("-t filter -P FORWARD DROP"),
 	Rule("-t filter -N in-tcp"),
