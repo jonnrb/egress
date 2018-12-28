@@ -53,7 +53,10 @@ func main() {
 	grp.Go(func() error {
 		return runSubprocess(ctx, args)
 	})
-	if err := grp.Wait(); err != nil {
+
+	switch err := grp.Wait(); err {
+	case errSubprocessExited, http.ErrServerClosed, nil:
+	default:
 		log.Fatal(err)
 	}
 }
@@ -204,6 +207,8 @@ func httpServeContext(ctx context.Context, cfg httpConfig) error {
 	return err
 }
 
+var errSubprocessExited = fmt.Errorf("subprocess exited")
+
 func runSubprocess(ctx context.Context, args []string) error {
 	if len(args) > 0 {
 		log.Infof("running %q", strings.Join(args, " "))
@@ -216,9 +221,10 @@ func runSubprocess(ctx context.Context, args []string) error {
 		if err := util.ReapChildren(cmd.Process); err != nil {
 			return fmt.Errorf("error waiting for subprocess: %v", err)
 		}
+		return errSubprocessExited
 	} else {
 		log.Info("sleeping forever")
 		<-ctx.Done()
+		return nil
 	}
-	return nil
 }
