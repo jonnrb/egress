@@ -13,8 +13,6 @@ steps:
     mount:
     - /drone/docker
     restore: true
-    volumes:
-    - dev_drone_cache:/cache
 
 - name: quay.io/jonnrb/egress
   image: plugins/docker
@@ -48,7 +46,10 @@ steps:
     mount:
     - /drone/docker
     rebuild: true
-    volumes:
-    - dev_drone_cache:/cache
+
+volumes:
+- name: cache
+  host:
+    path: "/mnt/disk1/@drone-cache:/cache"
 
 ...
