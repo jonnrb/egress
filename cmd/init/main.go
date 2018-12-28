@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/shlex"
 	"go.jonnrb.io/egress/backend/docker"
+	"go.jonnrb.io/egress/backend/kubernetes"
 	"go.jonnrb.io/egress/fw"
 	"go.jonnrb.io/egress/fw/rules"
 	"go.jonnrb.io/egress/health"
@@ -112,16 +113,28 @@ func getFWConfig() fw.Config {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	cfg, err := docker.GetConfig(ctx, docker.Params{
-		LANNetwork:      *lanNetwork,
-		FlatNetworks:    strings.Split(*flatNetworks, ","),
-		UplinkNetwork:   *uplinkNetwork,
-		UplinkInterface: *uplinkInterfaceName,
-	})
-	if err != nil {
-		log.Fatalf("Error configuring router from Docker environment: %v", err)
+	if kubernetes.InCluster() {
+		params, err := kubernetes.ParamsFromFile()
+		if err != nil {
+			log.Fatalf("Error getting Kubernetes router parameters: %v", err)
+		}
+		cfg, err := kubernetes.GetConfig(ctx, params)
+		if err != nil {
+			log.Fatalf("Error configuring router from Kubernetes environment: %v", err)
+		}
+		return cfg
+	} else {
+		cfg, err := docker.GetConfig(ctx, docker.Params{
+			LANNetwork:      *lanNetwork,
+			FlatNetworks:    strings.Split(*flatNetworks, ","),
+			UplinkNetwork:   *uplinkNetwork,
+			UplinkInterface: *uplinkInterfaceName,
+		})
+		if err != nil {
+			log.Fatalf("Error configuring router from Docker environment: %v", err)
+		}
+		return cfg
 	}
-	return cfg
 }
 
 type httpConfig struct {
