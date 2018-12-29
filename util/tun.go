@@ -13,6 +13,10 @@ func CreateTun(name string) error {
 		return fmt.Errorf("error creating /dev/net/tun: %v", err)
 	}
 
+	if ok, err := tunExists(name); ok || err != nil {
+		return err
+	}
+
 	la := netlink.NewLinkAttrs()
 	la.Name = name
 
@@ -28,6 +32,18 @@ func CreateTun(name string) error {
 	}
 
 	return nil
+}
+
+func tunExists(name string) (bool, error) {
+	link, err := netlink.LinkByName(name)
+	if err != nil {
+		return false, nil
+	}
+	tuntap, isTuntap := link.(*netlink.Tuntap)
+	if !isTuntap {
+		return false, fmt.Errorf("device %q exists, but isn't a tun", name)
+	}
+	return tuntap.Mode&netlink.TUNTAP_MODE_TUN != 0, nil
 }
 
 func maybeCreateDevNetTun() error {
