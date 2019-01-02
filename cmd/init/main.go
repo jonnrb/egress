@@ -24,13 +24,9 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-var (
-	openPortsCSV = flag.String("open_ports", "", "additional ports to open (tcp/1234,udp/2345)")
-)
-
 func main() {
 	flag.Parse()
-	args := processArgs()
+	args, extraRules := processArgs()
 
 	if *healthCheck {
 		healthCheckMain()
@@ -40,8 +36,14 @@ func main() {
 	// Create things that aren't bound by the main context.Context.
 	maybeCreateNetworks()
 	cfg := getFWConfig()
-	httpCfg := listenHTTP()
-	applyFWRules(cfg, httpCfg)
+	if *noCmd {
+		// Skip some stuff if noCmd.
+		applyFWRules(cfg, extraRules)
+		return
+	}
+	httpCfg, openPortRule := listenHTTP()
+	extraRules = append(extraRules, openPortRule)
+	applyFWRules(cfg, extraRules)
 
 	// Create the root context.Context.
 	ctx, cancel := context.WithCancel(context.Background())
@@ -83,22 +85,24 @@ func healthCheckMain() {
 	}
 }
 
-func processArgs() []string {
-	args := flag.Args()
+func processArgs() (args []string, openPortRules rules.RuleSet) {
+	openPortRules = getOpenPortRules()
+	args = flag.Args()
+
 	if *cmd == "" {
-		return args
+		return
 	}
 
 	if len(args) > 0 {
 		log.Fatal("Delegate process can be specifed by -c and a string or a list of args, but not both")
 	}
 
-	args, err := shlex.Split(*cmd)
+	var err error
+	args, err = shlex.Split(*cmd)
 	if err != nil {
 		log.Fatalf("Error parsing shell command %q: %v", *cmd, err)
 	}
-
-	return args
+	return
 }
 
 func maybeCreateNetworks() {
@@ -145,12 +149,11 @@ func getFWConfig() fw.Config {
 }
 
 type httpConfig struct {
-	listener     net.Listener
-	openPortRule rules.Rule
-	mux          *http.ServeMux
+	listener net.Listener
+	mux      *http.ServeMux
 }
 
-func listenHTTP() httpConfig {
+func listenHTTP() (httpConfig, rules.Rule) {
 	l, err := net.Listen("tcp", *httpAddr)
 	if err != nil {
 		log.Fatalf("Could not listen on given -http.addr %q: %v", *httpAddr, err)
@@ -163,16 +166,13 @@ func listenHTTP() httpConfig {
 	}
 
 	return httpConfig{
-		listener:     l,
-		openPortRule: fw.OpenPort("tcp", port),
-		mux:          http.NewServeMux(),
-	}
+		listener: l,
+		mux:      http.NewServeMux(),
+	}, fw.OpenPort("tcp", port)
 }
 
-func applyFWRules(cfg fw.Config, httpCfg httpConfig) {
+func applyFWRules(cfg fw.Config, extraRules rules.RuleSet) {
 	log.V(2).Info("Applying fw rules from environment")
-
-	extraRules := append(getOpenPortRules(), httpCfg.openPortRule)
 	if err := fw.Apply(fw.WithExtraRules(cfg, extraRules)); err != nil {
 		log.Fatalf("Error applying fw rules: %v", err)
 	}

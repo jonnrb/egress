@@ -7,6 +7,8 @@ var (
 	tunCreateName = flag.String("create_tun", "", "If set, creates a tun interface with the specified name (to be used with -docker.uplink_interface and probably a VPN client")
 	cmd           = flag.String("c", "", "Command to run after initialization")
 	httpAddr      = flag.String("http.addr", "0.0.0.0:8080", "Port to serve metrics and health status on")
+	openPortsCSV  = flag.String("open_ports", "", "additional ports to open (tcp/1234,udp/2345)")
+	noCmd         = flag.Bool("no_cmd", false, "exit on success (the default when no cmd is specified is to sleep)")
 
 	lanNetwork          = flag.String("docker.lan_network", "", "Container network that this container will act as the gateway for")
 	flatNetworks        = flag.String("docker.flat_networks", "", "CSV of container networks that this container will forward to (not masqueraded)")
