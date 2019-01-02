@@ -45,6 +45,7 @@ func (params Params) check() error {
 }
 
 type Config struct {
+	params Params
 	lan    netlink.Link
 	uplink netlink.Link
 	flat   []fw.StaticRoute

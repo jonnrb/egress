@@ -33,6 +33,7 @@ func (params Params) check() error {
 }
 
 type Config struct {
+	params Params
 	lan    netlink.Link
 	uplink netlink.Link
 	flat   []fw.StaticRoute
@@ -65,19 +66,13 @@ func GetConfig(ctx context.Context, params Params) (*Config, error) {
 		return nil, err
 	}
 
-	cli, err := docker.NewEnvClient()
-	if err != nil {
-		return nil, fmt.Errorf("error connecting to docker: %v", err)
-	}
-	defer cli.Close()
-	log.V(2).Info("connected to docker")
-
-	containerJSON, err := getContainerJSON(ctx, cli)
+	env, err := loadEnvironment(ctx, params)
 	if err != nil {
 		return nil, err
 	}
+	defer env.cli.Close()
 
-	return getConfigInternal(environment{ctx, params, containerJSON, cli})
+	return getConfigInternal(env)
 }
 
 // Environment bundle throughout ctx.
@@ -86,6 +81,25 @@ type environment struct {
 	params        Params
 	containerJSON *types.ContainerJSON
 	cli           *docker.Client
+}
+
+func loadEnvironment(ctx context.Context, params Params) (env environment, err error) {
+	env.ctx = ctx
+	env.params = params
+
+	env.cli, err = docker.NewEnvClient()
+	if err != nil {
+		err = fmt.Errorf("error connecting to docker: %v", err)
+		return
+	}
+	log.V(2).Info("Connected to docker")
+
+	env.containerJSON, err = getContainerJSON(ctx, env.cli)
+	if err != nil {
+		env.cli.Close()
+		return
+	}
+	return
 }
 
 func getConfigInternal(env environment) (*Config, error) {
@@ -105,13 +119,23 @@ func getConfigInternal(env environment) (*Config, error) {
 	}
 
 	cfg := &Config{
+		params: env.params,
 		lan:    lanInterface,
 		uplink: uplinkInterface,
 		flat:   sr,
 	}
 
-	log.V(2).Info("applying gateway hack")
-	return cfg, dockerGatewayHacky(env, lanInterface)
+	return cfg, nil
+}
+
+func (c *Config) Activate(ctx context.Context) error {
+	env, err := loadEnvironment(ctx, c.params)
+	if err != nil {
+		return err
+	}
+
+	log.V(2).Info("Applying gateway hack")
+	return dockerGatewayHacky(env, c.lan)
 }
 
 func extractStaticRoutes(env environment) ([]fw.StaticRoute, error) {

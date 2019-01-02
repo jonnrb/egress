@@ -65,7 +65,7 @@ func getConfigInternal(ctx context.Context, env environment, params Params) (*Co
 		return
 	})
 	grp.Go(func() (err error) {
-		lan, err = getLAN(ctx, env, params)
+		lan, err = getLAN(env, params)
 		return
 	})
 	grp.Go(func() (err error) {
@@ -78,10 +78,29 @@ func getConfigInternal(ctx context.Context, env environment, params Params) (*Co
 	}
 
 	return &Config{
+		params: params,
 		uplink: uplink,
 		lan:    lan,
 		flat:   flat,
 	}, nil
+}
+
+func (c *Config) Activate(ctx context.Context) error {
+	env, err := loadEnvironment()
+	if err != nil {
+		return err
+	}
+
+	net, err := env.cli.Get(ctx, c.params.LANNetwork)
+	if err != nil {
+		return fmt.Errorf("error getting CNI config for network %q: %v", c.params.LANNetwork, err)
+	}
+
+	if err := applyGWIP(c.lan, net); err != nil {
+		return fmt.Errorf("error applying GW IP to LAN interface: %v", err)
+	}
+
+	return nil
 }
 
 func getUplink(env environment, params Params) (netlink.Link, error) {
@@ -101,24 +120,11 @@ func getUplink(env environment, params Params) (netlink.Link, error) {
 	}
 }
 
-// Gets the LAN link with a context.Context (i.e. this can block). Getting the
-// actual link is "immediate", but assigning the gateway IP is not (we have to
-// fetch the CNI definition to get the gateway IP).
-func getLAN(ctx context.Context, env environment, params Params) (netlink.Link, error) {
+func getLAN(env environment, params Params) (netlink.Link, error) {
 	lan, err := getLinkForNet(env.attachments, params.LANNetwork)
 	if err != nil {
 		return nil, fmt.Errorf("could not get link for LAN network %q: %v", params.LANNetwork, err)
 	}
-
-	net, err := env.cli.Get(ctx, params.LANNetwork)
-	if err != nil {
-		return nil, fmt.Errorf("error getting CNI config for network %q: %v", params.LANNetwork, err)
-	}
-
-	if err := applyGWIP(lan, net); err != nil {
-		return nil, fmt.Errorf("error applying GW IP to LAN interface: %v", err)
-	}
-
 	return lan, nil
 }
 

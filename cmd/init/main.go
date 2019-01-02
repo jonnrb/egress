@@ -36,13 +36,18 @@ func main() {
 	// Create things that aren't bound by the main context.Context.
 	maybeCreateNetworks()
 	cfg := getFWConfig()
-	if *noCmd {
+	if *noCmd && !*justMetrics {
 		// Skip some stuff if noCmd.
 		applyFWRules(cfg, extraRules)
 		return
 	}
-	httpCfg, openPortRule := listenHTTP()
-	extraRules = append(extraRules, openPortRule)
+
+	httpCfg := listenHTTP()
+	if *justMetrics {
+		httpServeContext(context.Background(), httpCfg)
+		return
+	}
+
 	applyFWRules(cfg, extraRules)
 
 	// Create the root context.Context.
@@ -86,7 +91,7 @@ func healthCheckMain() {
 }
 
 func processArgs() (args []string, openPortRules rules.RuleSet) {
-	openPortRules = getOpenPortRules()
+	openPortRules = append(getOpenPortRules(), openHTTPPort())
 	args = flag.Args()
 
 	if *cmd == "" {
@@ -148,30 +153,52 @@ func getFWConfig() fw.Config {
 	}
 }
 
+func maybeActivateFWConfig(cfg fw.Config) {
+	type dormantConfig interface {
+		Activate(ctx context.Context) error
+	}
+	dormantCfg, ok := cfg.(dormantConfig)
+	if !ok {
+		log.V(2).Info("FW config requires no activation")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := dormantCfg.Activate(ctx); err != nil {
+		log.Fatalf("Error activating config: %v", err)
+	}
+}
+
 type httpConfig struct {
 	listener net.Listener
 	mux      *http.ServeMux
 }
 
-func listenHTTP() (httpConfig, rules.Rule) {
+func listenHTTP() httpConfig {
 	l, err := net.Listen("tcp", *httpAddr)
 	if err != nil {
 		log.Fatalf("Could not listen on given -http.addr %q: %v", *httpAddr, err)
 	}
 	log.Infof("listening on %q", *httpAddr)
 
-	_, port, err := net.SplitHostPort(l.Addr().String())
-	if err != nil {
-		panic(err)
-	}
-
 	return httpConfig{
 		listener: l,
 		mux:      http.NewServeMux(),
-	}, fw.OpenPort("tcp", port)
+	}
+}
+
+func openHTTPPort() rules.Rule {
+	_, port, err := net.SplitHostPort(*httpAddr)
+	if err != nil {
+		log.Fatalf("Bad \"-http.addr\" %q: %v", *httpAddr, err)
+	}
+	return fw.OpenPort("tcp", port)
 }
 
 func applyFWRules(cfg fw.Config, extraRules rules.RuleSet) {
+	maybeActivateFWConfig(cfg)
+
 	log.V(2).Info("Applying fw rules from environment")
 	if err := fw.Apply(fw.WithExtraRules(cfg, extraRules)); err != nil {
 		log.Fatalf("Error applying fw rules: %v", err)
