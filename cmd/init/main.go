@@ -24,6 +24,10 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+var (
+	openPortsCSV = flag.String("open_ports", "", "additional ports to open (tcp/1234,udp/2345)")
+)
+
 func main() {
 	flag.Parse()
 	args := processArgs()
@@ -168,10 +172,21 @@ func listenHTTP() httpConfig {
 func applyFWRules(cfg fw.Config, httpCfg httpConfig) {
 	log.V(2).Info("Applying fw rules from environment")
 
-	extraRules := rules.RuleSet{httpCfg.openPortRule}
+	extraRules := append(getOpenPortRules(), httpCfg.openPortRule)
 	if err := fw.Apply(fw.WithExtraRules(cfg, extraRules)); err != nil {
 		log.Fatalf("Error applying fw rules: %v", err)
 	}
+}
+
+func getOpenPortRules() (r rules.RuleSet) {
+	for _, s := range strings.Split(*openPortsCSV, ",") {
+		s2 := strings.SplitN(s, "/", 2)
+		if len(s2) != 2 {
+			log.Fatalf("Flag \"-open_ports\" should be a CSV of (tcp|udp)/port pairs; got %q", *openPortsCSV)
+		}
+		r = append(r, fw.OpenPort(s2[0], s2[1]))
+	}
+	return
 }
 
 func setupHTTPHandlers(ctx context.Context, cfg fw.Config, httpCfg httpConfig) {
