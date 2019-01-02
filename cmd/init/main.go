@@ -206,6 +206,9 @@ func applyFWRules(cfg fw.Config, extraRules rules.RuleSet) {
 }
 
 func getOpenPortRules() (r rules.RuleSet) {
+	if *openPortsCSV == "" {
+		return
+	}
 	for _, s := range strings.Split(*openPortsCSV, ",") {
 		s2 := strings.SplitN(s, "/", 2)
 		if len(s2) != 2 {
