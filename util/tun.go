@@ -39,11 +39,13 @@ func tunExists(name string) (bool, error) {
 	if err != nil {
 		return false, nil
 	}
+
 	tuntap, isTuntap := link.(*netlink.Tuntap)
-	if !isTuntap {
+	if isTuntap && tuntap.Mode&netlink.TUNTAP_MODE_TUN != 0 {
+		return true, nil
+	} else {
 		return false, fmt.Errorf("device %q exists, but isn't a tun", name)
 	}
-	return tuntap.Mode&netlink.TUNTAP_MODE_TUN != 0, nil
 }
 
 func maybeCreateDevNetTun() error {
