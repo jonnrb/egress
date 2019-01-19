@@ -44,7 +44,9 @@ func main() {
 
 	httpCfg := listenHTTP()
 	if *justMetrics {
-		httpServeContext(context.Background(), httpCfg)
+		ctx := context.Background()
+		setupHTTPHandlers(ctx, cfg, httpCfg)
+		httpServeContext(ctx, httpCfg)
 		return
 	}
 
