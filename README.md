@@ -12,6 +12,3 @@ NIC.
 I've been using `cmd/init` on a pure Docker system for a while and it works
 pretty well in that scenario, but I'm going to try and make this work on a
 Kubernetes system, which requires a bit more thought to do correctly.
-
-The resulting containers are built in
-[https://git.jonnrb.com/jon/network\_containers](https://git.jonnrb.com/jon/network_containers).
