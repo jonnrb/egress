@@ -215,7 +215,6 @@ func getBlockInterfaceInputRules() (r rules.RuleSet) {
 	}
 	for _, iface := range strings.Split(*blockInterfaceInputCSV, ",") {
 		r = append(r,
-			fw.BlockInputFromInterface("udp", iface),
 			fw.BlockInputFromInterface("tcp", iface))
 	}
 	return
