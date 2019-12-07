@@ -93,9 +93,9 @@ func healthCheckMain() {
 }
 
 func processArgs() (args []string, extraRules rules.RuleSet) {
-	extraRules = getBlockInterfaceInputRules()
-	extraRules = append(extraRules, getOpenPortRules()...)
+	extraRules = getOpenPortRules()
 	extraRules = append(extraRules, openHTTPPort())
+	extraRules = append(extraRules, getBlockInterfaceInputRules()...)
 	args = flag.Args()
 
 	if *cmd == "" {
