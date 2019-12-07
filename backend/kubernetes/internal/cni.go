@@ -2,6 +2,7 @@ package internal
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"net"
@@ -78,6 +79,28 @@ func (c *CNIClient) Get(ctx context.Context, netName string) (*NetworkDefinition
 }
 
 func extractRanges(raw []byte) ([]Range, error) {
+	type confList struct {
+		Plugins []interface{} `json:"plugins"`
+	}
+	var cl confList
+	_ = json.Unmarshal(raw, &cl)
+	if len(cl.Plugins) != 0 {
+		var err error
+
+		for _, p := range cl.Plugins {
+			raw, err = json.Marshal(p)
+			if err != nil {
+				return nil, fmt.Errorf("could not remarshal sub-plugin: %w", err)
+			}
+			ranges, err := extractRanges(raw)
+			if err == nil {
+				return ranges, nil
+			}
+		}
+
+		return nil, fmt.Errorf("could not find IPAM config in plugin chain: %w", err)
+	}
+
 	ipamCfg, _, err := allocator.LoadIPAMConfig(raw, "")
 	if err != nil {
 		return nil, err
