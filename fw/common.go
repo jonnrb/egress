@@ -42,3 +42,12 @@ func OpenPort(proto, port string) rules.Rule {
 		"-I in-%s -j ACCEPT -p %s --dport %s",
 		proto, proto, port))
 }
+
+// Blocks input (local connections) from a specific network interface. This is
+// specific to L4/transport-layer (TCP/UDP currently, other protos may be added
+// in the future) assuming things like ICMP shouldn't be blocked.
+func BlockInputFromInterface(proto, iface string) rules.Rule {
+	return rules.Rule(fmt.Sprintf(
+		"-I in-%s -j RETURN -i %s -p %s",
+		proto, iface, proto))
+}

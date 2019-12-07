@@ -92,8 +92,10 @@ func healthCheckMain() {
 	}
 }
 
-func processArgs() (args []string, openPortRules rules.RuleSet) {
-	openPortRules = append(getOpenPortRules(), openHTTPPort())
+func processArgs() (args []string, extraRules rules.RuleSet) {
+	extraRules = getBlockInterfaceInputRules()
+	extraRules = append(extraRules, getOpenPortRules()...)
+	extraRules = append(extraRules, openHTTPPort())
 	args = flag.Args()
 
 	if *cmd == "" {
@@ -205,6 +207,18 @@ func applyFWRules(cfg fw.Config, extraRules rules.RuleSet) {
 	if err := fw.Apply(fw.WithExtraRules(cfg, extraRules)); err != nil {
 		log.Fatalf("Error applying fw rules: %v", err)
 	}
+}
+
+func getBlockInterfaceInputRules() (r rules.RuleSet) {
+	if *blockInterfaceInputCSV == "" {
+		return
+	}
+	for _, iface := range strings.Split(*blockInterfaceInputCSV, ",") {
+		r = append(r,
+			fw.BlockInputFromInterface("udp", iface),
+			fw.BlockInputFromInterface("tcp", iface))
+	}
+	return
 }
 
 func getOpenPortRules() (r rules.RuleSet) {
