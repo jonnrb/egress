@@ -197,7 +197,11 @@ func openHTTPPort() rules.Rule {
 	if err != nil {
 		log.Fatalf("Bad \"-http.addr\" %q: %v", *httpAddr, err)
 	}
-	return fw.OpenPort("tcp", port)
+	if *httpIface != "" {
+		return fw.OpenPortOnInterface("tcp", port, *httpIface)
+	} else {
+		return fw.OpenPort("tcp", port)
+	}
 }
 
 func applyFWRules(cfg fw.Config, extraRules rules.RuleSet) {
@@ -225,11 +229,15 @@ func getOpenPortRules() (r rules.RuleSet) {
 		return
 	}
 	for _, s := range strings.Split(*openPortsCSV, ",") {
-		s2 := strings.SplitN(s, "/", 2)
-		if len(s2) != 2 {
-			log.Fatalf("Flag \"-open_ports\" should be a CSV of (tcp|udp)/port pairs; got %q", *openPortsCSV)
+		// Grab potentially one more token than expected to allow early failure.
+		switch s2 := strings.SplitN(s, "/", 4); len(s2) {
+		case 2:
+			r = append(r, fw.OpenPort(s2[0], s2[1]))
+		case 3:
+			r = append(r, fw.OpenPortOnInterface(s2[0], s2[1], s2[2]))
+		default:
+			log.Fatalf("Flag \"-open_ports\" should be a CSV of (tcp|udp)/port pairs or (tcp|udp)/port/iface triples; got %q", *openPortsCSV)
 		}
-		r = append(r, fw.OpenPort(s2[0], s2[1]))
 	}
 	return
 }

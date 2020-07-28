@@ -29,6 +29,21 @@ func Masquerade(out Link) rules.Rule {
 		out.Name()))
 }
 
+// Allows either tcp or udp input traffic to a specific port from a specific
+// interface.
+func OpenPortOnInterface(proto, port, iface string) rules.Rule {
+	switch proto {
+	case "tcp":
+	case "udp":
+	default:
+		panic(fmt.Sprintf("invalid proto: %q", proto))
+	}
+
+	return rules.Rule(fmt.Sprintf(
+		"-I in-%s -j ACCEPT -p %s --dport %s -i %s",
+		proto, proto, port, iface))
+}
+
 // Allows either tcp or udp input traffic to a specific port.
 func OpenPort(proto, port string) rules.Rule {
 	switch proto {
