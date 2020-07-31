@@ -9,18 +9,23 @@ import (
 	"strings"
 	"sync"
 
-	cni "github.com/K8sNetworkPlumbingWG/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
 	"github.com/containernetworking/plugins/plugins/ipam/host-local/backend/allocator"
-	"github.com/ericchiang/k8s"
+	clientset "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/client/clientset/versioned/typed/k8s.cni.cncf.io/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/rest"
 )
 
 // Wrapper around the CNI CRD k8s API.
 type CNIClient struct {
-	k *k8s.Client
+	c *clientset.K8sCniCncfIoV1Client
 }
 
-func NewCNIClient(c *k8s.Client) *CNIClient {
-	return &CNIClient{c}
+func NewCNIClient(cfg *rest.Config) (*CNIClient, error) {
+	c, err := clientset.NewForConfig(cfg)
+	if err != nil {
+		return nil, err
+	}
+	return &CNIClient{c}, nil
 }
 
 type NetworkDefinition struct {
@@ -61,9 +66,8 @@ func (c *CNIClient) Get(ctx context.Context, netName string) (*NetworkDefinition
 		}
 	}
 
-	var net cni.NetworkAttachmentDefinition
-	// Use the local, registered type to make a call.
-	if err := c.k.Get(ctx, namespace, name, (*netAttachDef)(&net)); err != nil {
+	net, err := c.c.NetworkAttachmentDefinitions(namespace).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
 		return nil, err
 	}
 

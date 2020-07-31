@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/vishvananda/netlink"
+	"go.jonnrb.io/egress/backend/kubernetes/client"
 	"go.jonnrb.io/egress/backend/kubernetes/internal"
 	"go.jonnrb.io/egress/fw"
 	"go.jonnrb.io/egress/log"
@@ -35,12 +36,16 @@ type environment struct {
 }
 
 func loadEnvironment() (env environment, err error) {
-	cli, err := internal.GetK8sClient()
+	cli, err := client.Get()
 	if err != nil {
 		err = fmt.Errorf("could not get kubernetes client: %v", err)
 		return
 	}
-	env.cli = internal.NewCNIClient(cli)
+	env.cli, err = internal.NewCNIClient(cli)
+	if err != nil {
+		err = fmt.Errorf("could not get kubernetes client: %v", err)
+		return
+	}
 
 	attachments, err := internal.GetAttachments()
 	if err != nil {
