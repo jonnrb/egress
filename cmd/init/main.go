@@ -116,14 +116,21 @@ func processArgs() (args []string, extraRules rules.RuleSet) {
 
 func maybeCreateNetworks() {
 	tun := *tunCreateName
-	if tun == "" {
-		return
+	if tun != "" {
+		log.V(2).Infof("Attempting to create tunnel %q", tun)
+		err := util.CreateTun(tun)
+		if err != nil {
+			log.Fatalf("Could not create tunnel specified by -create_tun: %v", err)
+		}
 	}
 
-	log.V(2).Infof("Attempting to create tunnel %q", tun)
-	err := util.CreateTun(tun)
-	if err != nil {
-		log.Fatalf("Could not create tunnel specified by -create_tun: %v", err)
+	wg := *wgCreateName
+	if wg != "" {
+		log.V(2).Infof("Attempting to create wireguard dev %q", wg)
+		err := util.CreateWg(wg)
+		if err != nil {
+			log.Fatalf("Could not create wireguard dev specified by -create_wg: %v", err)
+		}
 	}
 }
 
