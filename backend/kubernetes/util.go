@@ -66,14 +66,18 @@ func makeAttachmentMap(attachs []internal.Attachment) map[string]internal.Attach
 }
 
 func getLinkForNet(attachments map[string]internal.Attachment, net string) (netlink.Link, error) {
-	// net may be of the form namespace/name, but attachments only show up with
-	// the "name" bit.
-	split := strings.SplitN(net, "/", 2)
-	if len(split) == 2 {
-		net = split[1]
+	// net may be of the form namespace/name, but under older versions of
+	// multus, attachments only show up with the "name" bit.
+	netCompat := net
+	if split := strings.SplitN(net, "/", 2); len(split) == 2 {
+		netCompat = split[1]
 	}
 
 	attach, ok := attachments[net]
+	if !ok {
+		// Try the old-multus compatible name.
+		attach, ok = attachments[netCompat]
+	}
 	if !ok {
 		return nil, fmt.Errorf("pod not attached to network %q", net)
 	}
