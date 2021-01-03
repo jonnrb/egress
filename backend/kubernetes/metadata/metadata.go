@@ -7,17 +7,19 @@ import (
 )
 
 var (
-	attachments = PodInfo{name: "attachments"}
-	podName     = PodInfo{name: "pod-name"}
+	attachments  = PodInfo{path: "/etc/podinfo/attachments"}
+	podName      = PodInfo{path: "/etc/podinfo/pod-name"}
+	podNamespace = PodInfo{path: "/var/run/secrets/kubernetes.io/serviceaccount/namespace"}
 )
 
 var (
-	GetAttachments = attachments.Get
-	GetPodName     = podName.Get
+	GetAttachments  = attachments.Get
+	GetPodName      = podName.Get
+	GetPodNamespace = podNamespace.Get
 )
 
 type PodInfo struct {
-	name string
+	path string
 
 	once sync.Once
 	val  string
@@ -26,15 +28,12 @@ type PodInfo struct {
 
 func (p *PodInfo) Get() (value string, err error) {
 	p.once.Do(func() {
-		p.val, p.err = getPodInfo(p.name)
+		p.val, p.err = getPodInfo(p.path)
 	})
 	return p.val, p.err
 }
 
-func getPodInfo(name string) (value string, err error) {
-	// The downward API standard-ish mount point.
-	path := "/etc/podinfo/" + name
-
+func getPodInfo(path string) (value string, err error) {
 	// Do a backoff on the path.
 	for backoff := 100 * time.Millisecond; backoff < time.Second; backoff = backoff * 2 {
 		value, err = readFile(path)

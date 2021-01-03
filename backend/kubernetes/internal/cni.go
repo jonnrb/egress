@@ -4,13 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"net"
 	"strings"
-	"sync"
 
 	"github.com/containernetworking/plugins/plugins/ipam/host-local/backend/allocator"
 	clientset "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/client/clientset/versioned/typed/k8s.cni.cncf.io/v1"
+	"go.jonnrb.io/egress/backend/kubernetes/metadata"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/rest"
 )
@@ -37,22 +36,6 @@ type Range struct {
 	Subnet  net.IPNet
 }
 
-var (
-	currentNamespaceOnce sync.Once
-	currentNamespace     string
-	currentNamespaceErr  error
-)
-
-func getCurrentNamespace() (string, error) {
-	currentNamespaceOnce.Do(func() {
-		var ns []byte
-		ns, currentNamespaceErr = ioutil.ReadFile(
-			"/var/run/secrets/kubernetes.io/serviceaccount/namespace")
-		currentNamespace = string(ns)
-	})
-	return currentNamespace, currentNamespaceErr
-}
-
 // Gets a NetworkDefinition by its name, where netName is "namespace/net" or
 // just "net" in the current namespace.
 func (c *CNIClient) Get(ctx context.Context, netName string) (*NetworkDefinition, error) {
@@ -60,7 +43,7 @@ func (c *CNIClient) Get(ctx context.Context, netName string) (*NetworkDefinition
 
 	if namespace == "" {
 		var err error
-		namespace, err = getCurrentNamespace()
+		namespace, err = metadata.GetPodNamespace()
 		if err != nil {
 			return nil, fmt.Errorf("network namespace not provided and could not figure out current namespace from environment: %v", err)
 		}
