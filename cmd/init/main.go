@@ -258,7 +258,7 @@ func setupHTTPHandlers(ctx context.Context, cfg fw.Config, httpCfg httpConfig) {
 	}
 
 	httpCfg.mux.Handle("/metrics", metricsHandler)
-	httpCfg.mux.Handle("/healthz", health.New(ctx))
+	httpCfg.mux.Handle("/healthz", health.New(ctx, nil))
 }
 
 func httpServeContext(ctx context.Context, cfg httpConfig) error {
