@@ -8,6 +8,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.jonnrb.io/egress/ha"
 	"go.jonnrb.io/egress/log"
 )
 
@@ -20,11 +21,14 @@ var (
 
 type Config struct {
 	UplinkName string
+	HAHandler  func(m ha.Member)
 }
 
 type metrics struct {
 	receiveBytes  prometheus.Gauge
 	transmitBytes prometheus.Gauge
+	isLeader      prometheus.Gauge
+	isFollower    prometheus.Gauge
 }
 
 // Returns a metrics handler that will scrape metrics during ctx.
@@ -38,6 +42,14 @@ func New(ctx context.Context, cfg Config) (http.Handler, error) {
 			Name: "uplink_network_transmit_bytes",
 			Help: "Counter reporting transmit bytes on the uplink interface.",
 		}),
+		isLeader: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "is_leader",
+			Help: "Reports if the current node is the leader in an HA deployment.",
+		}),
+		isFollower: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "is_follower",
+			Help: "Reports if the current node is a follower in an HA deployment.",
+		}),
 	}
 
 	r := prometheus.NewRegistry()
@@ -46,6 +58,16 @@ func New(ctx context.Context, cfg Config) (http.Handler, error) {
 	}
 	if err := r.Register(m.transmitBytes); err != nil {
 		return nil, err
+	}
+	if err := r.Register(m.isLeader); err != nil {
+		return nil, err
+	}
+	if err := r.Register(m.isFollower); err != nil {
+		return nil, err
+	}
+
+	if cfg.HAHandler != nil {
+		cfg.HAHandler(haObserver(m))
 	}
 
 	go scrapeOnInterval(ctx, m, cfg.UplinkName)
@@ -66,4 +88,30 @@ func scrapeOnInterval(ctx context.Context, m metrics, uplinkName string) {
 			doMetricsScrape(m, uplinkName)
 		}
 	}
+}
+
+type haObserver metrics
+
+func (m haObserver) Lead(ctx context.Context, _ func(time.Duration) error) error {
+	log.V(2).Infof("setting metric noting that we became the leader")
+	m.isLeader.Inc()
+
+	<-ctx.Done()
+
+	log.V(2).Infof("setting metric noting that we are stepping down as leader")
+	m.isLeader.Dec()
+
+	return ctx.Err()
+}
+
+func (m haObserver) Follow(ctx context.Context, leader string) error {
+	log.V(2).Infof("setting metric noting that %q became the leader", leader)
+	m.isFollower.Inc()
+
+	<-ctx.Done()
+
+	log.V(2).Infof("setting metric noting that %q is no longer the leader", leader)
+	m.isFollower.Dec()
+
+	return ctx.Err()
 }
