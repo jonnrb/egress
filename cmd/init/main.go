@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 
@@ -200,12 +201,16 @@ func listenHTTP() httpConfig {
 }
 
 func openHTTPPort() rules.Rule {
-	_, port, err := net.SplitHostPort(*httpAddr)
+	_, portString, err := net.SplitHostPort(*httpAddr)
+	if err != nil {
+		log.Fatalf("Bad \"-http.addr\" %q: %v", *httpAddr, err)
+	}
+	port, err := strconv.Atoi(portString)
 	if err != nil {
 		log.Fatalf("Bad \"-http.addr\" %q: %v", *httpAddr, err)
 	}
 	if *httpIface != "" {
-		return fw.OpenPortOnInterface("tcp", port, *httpIface)
+		return fw.OpenPortOnInterface("tcp", port, fw.LinkString(*httpIface))
 	} else {
 		return fw.OpenPort("tcp", port)
 	}
@@ -226,7 +231,7 @@ func getBlockInterfaceInputRules() (r rules.RuleSet) {
 	}
 	for _, iface := range strings.Split(*blockInterfaceInputCSV, ",") {
 		r = append(r,
-			fw.BlockInputFromInterface("tcp", iface))
+			fw.BlockInputFromInterface("tcp", fw.LinkString(iface)))
 	}
 	return
 }
@@ -236,13 +241,21 @@ func getOpenPortRules() (r rules.RuleSet) {
 		return
 	}
 	for _, s := range strings.Split(*openPortsCSV, ",") {
+		var port int
+		var err error
 		// Grab potentially one more token than expected to allow early failure.
-		switch s2 := strings.SplitN(s, "/", 4); len(s2) {
-		case 2:
-			r = append(r, fw.OpenPort(s2[0], s2[1]))
-		case 3:
-			r = append(r, fw.OpenPortOnInterface(s2[0], s2[1], s2[2]))
-		default:
+		switch s2 := strings.SplitN(s, "/", 4); true {
+		case len(s2) >= 2:
+			port, err = strconv.Atoi(s2[1])
+			if err != nil {
+				log.Fatalf("Flag \"-open_ports\" should be a CSV of (tcp|udp)/port pairs or (tcp|udp)/port/iface triples; got %q: %v", *openPortsCSV, err)
+			}
+			fallthrough
+		case len(s2) == 2:
+			r = append(r, fw.OpenPort(s2[0], port))
+		case len(s2) == 3:
+			r = append(r, fw.OpenPortOnInterface(s2[0], port, fw.LinkString(s2[2])))
+		case len(s2) < 2 || len(s2) > 3:
 			log.Fatalf("Flag \"-open_ports\" should be a CSV of (tcp|udp)/port pairs or (tcp|udp)/port/iface triples; got %q", *openPortsCSV)
 		}
 	}

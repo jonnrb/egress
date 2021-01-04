@@ -1,6 +1,10 @@
 package fw
 
-import "go.jonnrb.io/egress/fw/rules"
+import (
+	"net"
+
+	"go.jonnrb.io/egress/fw/rules"
+)
 
 type Config interface {
 	// Link connected to the network with local clients.
@@ -20,10 +24,37 @@ type Config interface {
 // Union of a subnet specified in CIDR and the Link it can be reached on.
 type StaticRoute struct {
 	Link   Link
-	Subnet string
+	Subnet Addr
 }
 
 // A connected network interface.
 type Link interface {
 	Name() string
+}
+
+type LinkString string
+
+func (l LinkString) Name() string {
+	return string(l)
+}
+
+// An IP address and CIDR mask.
+type Addr struct {
+	IP   net.IP
+	Mask net.IPMask
+}
+
+func ParseAddr(s string) (a Addr, err error) {
+	ip, net, err := net.ParseCIDR(s)
+	if err != nil {
+		return
+	}
+	a.IP = ip
+	a.Mask = net.Mask
+	return
+}
+
+func (a Addr) String() string {
+	ones, _ := a.Mask.Size()
+	return a.IP.String() + "/" + string(ones)
 }

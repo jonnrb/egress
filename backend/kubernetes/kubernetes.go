@@ -147,11 +147,12 @@ func getFlatNetworks(ctx context.Context, env environment, params Params) ([]fw.
 	var routes []fw.StaticRoute
 	for name, net := range netMap {
 		for _, r := range net.Ranges {
-			ip := r.Subnet.IP.String()
-			cidr, _ := r.Subnet.Mask.Size()
 			routes = append(routes, fw.StaticRoute{
-				Link:   links[name],
-				Subnet: fmt.Sprintf("%s/%d", ip, cidr),
+				Link: links[name],
+				Subnet: fw.Addr{
+					IP:   r.Subnet.IP,
+					Mask: r.Subnet.Mask,
+				},
 			})
 		}
 	}

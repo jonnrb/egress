@@ -153,7 +153,10 @@ func extractStaticRoutes(env environment) ([]fw.StaticRoute, error) {
 		if len(n.IPAM.Config) != 1 {
 			return nil, fmt.Errorf("expected 1 IPAM config; got: %v", n.IPAM.Config)
 		}
-		subnet := n.IPAM.Config[0].Subnet
+		subnet, err := fw.ParseAddr(n.IPAM.Config[0].Subnet)
+		if err != nil {
+			return nil, err
+		}
 
 		sr = append(sr, fw.StaticRoute{
 			Link:   link{i.Attrs()},
