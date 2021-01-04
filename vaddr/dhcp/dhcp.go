@@ -8,6 +8,8 @@ import (
 
 	"github.com/insomniacslk/dhcp/dhcpv4/nclient4"
 	"go.jonnrb.io/egress/fw"
+	"go.jonnrb.io/egress/vaddr"
+	"go.jonnrb.io/egress/vaddr/vaddrutil"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -128,5 +130,37 @@ func (a VAddr) holdLease(ctx context.Context, l Lease) error {
 		}
 	})
 
+	eg.Go(func() error {
+		s := vaddr.Suite{
+			Wrappers: []vaddr.Wrapper{
+				&vaddrutil.IP{
+					Link: a.Link,
+					Addr: leasedAddr(l),
+				},
+				&vaddrutil.DefaultRoute{
+					Link: a.Link,
+					GW:   gwAddr(l),
+				},
+			},
+		}
+		return s.Run(ctx)
+	})
+
 	return eg.Wait()
+}
+
+func leasedAddr(l Lease) fw.Addr {
+	a, err := fw.ParseAddr(l.LeasedIP.String() + "/" + string(l.SubnetMask))
+	if err != nil {
+		panic(fmt.Sprintf("dhcp: invalid lease %v", l))
+	}
+	return a
+}
+
+func gwAddr(l Lease) fw.Addr {
+	a, err := fw.ParseAddr(l.GatewayIP.String())
+	if err != nil {
+		panic(fmt.Sprintf("dhcp: invalid lease %v", l))
+	}
+	return a
 }
