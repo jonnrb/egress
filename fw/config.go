@@ -2,6 +2,7 @@ package fw
 
 import (
 	"net"
+	"strings"
 
 	"go.jonnrb.io/egress/fw/rules"
 )
@@ -45,6 +46,10 @@ type Addr struct {
 }
 
 func ParseAddr(s string) (a Addr, err error) {
+	// Just an IP implies a /32.
+	if !strings.Contains(s, "/") {
+		s += "/32"
+	}
 	ip, net, err := net.ParseCIDR(s)
 	if err != nil {
 		return
