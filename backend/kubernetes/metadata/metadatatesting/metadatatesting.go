@@ -17,6 +17,22 @@ func Install(g *metadata.Getter, v string) Stubbed {
 	return s
 }
 
+func InstallError(g *metadata.Getter, err error) Stubbed {
+	s := Stubbed{g, *g}
+	*g = func() (string, error) {
+		return "", err
+	}
+	return s
+}
+
+func InstallPanic(g *metadata.Getter, v interface{}) Stubbed {
+	s := Stubbed{g, *g}
+	*g = func() (string, error) {
+		panic(v)
+	}
+	return s
+}
+
 func (s Stub) Uninstall() {
 	for _, sd := range s {
 		*sd.g = sd.p
