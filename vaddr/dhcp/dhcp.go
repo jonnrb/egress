@@ -150,7 +150,7 @@ func (a VAddr) holdLease(ctx context.Context, l Lease) error {
 }
 
 func leasedAddr(l Lease) fw.Addr {
-	a, err := fw.ParseAddr(l.LeasedIP.String() + "/" + string(l.SubnetMask))
+	a, err := fw.ParseAddr(fmt.Sprintf("%s/%d", l.LeasedIP, l.SubnetMask))
 	if err != nil {
 		panic(fmt.Sprintf("dhcp: invalid lease %v", l))
 	}

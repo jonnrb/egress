@@ -1,6 +1,7 @@
 package fw
 
 import (
+	"fmt"
 	"net"
 	"strings"
 
@@ -61,5 +62,5 @@ func ParseAddr(s string) (a Addr, err error) {
 
 func (a Addr) String() string {
 	ones, _ := a.Mask.Size()
-	return a.IP.String() + "/" + string(ones)
+	return fmt.Sprintf("%s/%d", a.IP, ones)
 }
