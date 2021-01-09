@@ -1,4 +1,4 @@
-package kubernetesdhcp
+package leasestore
 
 import (
 	"context"
@@ -19,7 +19,7 @@ import (
 	clientcorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 )
 
-type Lease struct {
+type LeaseStore struct {
 	// The name of the ConfigMap to write a lease to.
 	Name string
 
@@ -30,7 +30,7 @@ type Lease struct {
 	Client kubernetes.Interface
 }
 
-func New() (*Lease, error) {
+func New() (*LeaseStore, error) {
 	cli, err := client.Get()
 	if err != nil {
 		return nil, err
@@ -39,10 +39,10 @@ func New() (*Lease, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Lease{Client: cs}, nil
+	return &LeaseStore{Client: cs}, nil
 }
 
-func (c *Lease) Get(ctx context.Context) (l dhcp.Lease, err error) {
+func (c *LeaseStore) Get(ctx context.Context) (l dhcp.Lease, err error) {
 	cmi, err := c.configMapInterface()
 	if err != nil {
 		err = fmt.Errorf("kubernetes: could not load client: %w", err)
@@ -64,16 +64,21 @@ func (c *Lease) Get(ctx context.Context) (l dhcp.Lease, err error) {
 	return deserializeLease(d)
 }
 
-func (c *Lease) Put(ctx context.Context, l dhcp.Lease) error {
+func (c *LeaseStore) Put(ctx context.Context, l dhcp.Lease) error {
 	cmi, err := c.configMapInterface()
 	if err != nil {
 		return fmt.Errorf("kubernetes: could not load client: %w", err)
 	}
-	b, err := json.Marshal(corev1.ConfigMap{
+	cm := corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{Name: c.Name},
 		BinaryData: map[string][]byte{
 			configMapKey: serializeLease(l),
 		},
-	})
+	}
+	if _, err := cmi.Create(ctx, &cm, metav1.CreateOptions{}); err == nil {
+		return nil
+	}
+	b, err := json.Marshal(corev1.ConfigMap{BinaryData: cm.BinaryData})
 	if err != nil {
 		panic(fmt.Sprintf(
 			"kubernetes: could not marshal configmap for lease: %+v", l))
@@ -84,7 +89,7 @@ func (c *Lease) Put(ctx context.Context, l dhcp.Lease) error {
 	return err
 }
 
-func (c *Lease) configMapInterface() (clientcorev1.ConfigMapInterface, error) {
+func (c *LeaseStore) configMapInterface() (clientcorev1.ConfigMapInterface, error) {
 	ns := c.Namespace
 	if ns == "" {
 		var err error
@@ -96,7 +101,7 @@ func (c *Lease) configMapInterface() (clientcorev1.ConfigMapInterface, error) {
 	return c.Client.CoreV1().ConfigMaps(ns), nil
 }
 
-const configMapKey = "lease"
+const configMapKey = "lease.json"
 
 type serializableLease struct {
 	LeasedIP    string    `json:"leasedIP"`
@@ -111,7 +116,7 @@ type serializableLease struct {
 func serializeLease(l dhcp.Lease) []byte {
 	b, err := json.Marshal(
 		serializableLease{
-			LeasedIP:    l.LeasedIP.String() + "/" + string(l.SubnetMask),
+			LeasedIP:    fmt.Sprintf("%s/%d", l.LeasedIP, l.SubnetMask),
 			GatewayIP:   l.GatewayIP.String(),
 			ServerIP:    l.ServerIP.String(),
 			StartTime:   l.StartTime,
