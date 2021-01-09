@@ -54,7 +54,7 @@ func OpenPort(proto string, port int) rules.Rule {
 	}
 
 	return rules.Rule(fmt.Sprintf(
-		"-I in-%s -j ACCEPT -p %s --dport %s",
+		"-I in-%s -j ACCEPT -p %s --dport %d",
 		proto, proto, port))
 }
 
@@ -64,5 +64,5 @@ func OpenPort(proto string, port int) rules.Rule {
 func BlockInputFromInterface(proto string, iface Link) rules.Rule {
 	return rules.Rule(fmt.Sprintf(
 		"-I in-%s -j RETURN -i %s -p %s",
-		proto, iface.Name, proto))
+		proto, iface.Name(), proto))
 }
