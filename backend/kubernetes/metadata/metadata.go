@@ -7,18 +7,20 @@ import (
 )
 
 var (
-	attachments  = PodInfo{path: "/etc/podinfo/attachments"}
-	podName      = PodInfo{path: "/etc/podinfo/pod-name"}
-	podNamespace = PodInfo{path: "/var/run/secrets/kubernetes.io/serviceaccount/namespace"}
+	attachments  = podInfo{path: "/etc/podinfo/attachments"}
+	podName      = podInfo{path: "/etc/podinfo/pod-name"}
+	podNamespace = podInfo{path: "/var/run/secrets/kubernetes.io/serviceaccount/namespace"}
 )
+
+type Getter func() (val string, err error)
 
 var (
-	GetAttachments  = attachments.Get
-	GetPodName      = podName.Get
-	GetPodNamespace = podNamespace.Get
+	GetAttachments  = Getter(attachments.Get)
+	GetPodName      = Getter(podName.Get)
+	GetPodNamespace = Getter(podNamespace.Get)
 )
 
-type PodInfo struct {
+type podInfo struct {
 	path string
 
 	once sync.Once
@@ -26,7 +28,7 @@ type PodInfo struct {
 	err  error
 }
 
-func (p *PodInfo) Get() (value string, err error) {
+func (p *podInfo) Get() (value string, err error) {
 	p.once.Do(func() {
 		p.val, p.err = getPodInfo(p.path)
 	})
