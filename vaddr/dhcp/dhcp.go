@@ -162,6 +162,11 @@ func (a VAddr) applyLease(l Lease) vaddr.Active {
 				Link: a.Link,
 				GW:   gwAddr(l),
 			},
+			&vaddrutil.GratuitousARP{
+				Link:   a.Link,
+				HWAddr: a.HWAddr,
+				IP:     l.LeasedIP,
+			},
 		},
 	}
 }
