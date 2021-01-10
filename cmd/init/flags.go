@@ -13,9 +13,4 @@ var (
 	blockInterfaceInputCSV = flag.String("block_interface_input", "", "Interfaces that cannot connect to ports on this router (e.g. eth0,eth1)")
 	noCmd                  = flag.Bool("no_cmd", false, "Exit on success (the default when no cmd is specified is to sleep)")
 	justMetrics            = flag.Bool("just_metrics", false, "Just serves metrics without doing any setup (meant to be used in a pod)")
-
-	lanNetwork          = flag.String("docker.lan_network", "", "Container network that this container will act as the gateway for")
-	flatNetworks        = flag.String("docker.flat_networks", "", "CSV of container networks that this container will forward to (not masqueraded)")
-	uplinkNetwork       = flag.String("docker.uplink_network", "", "Container network used for uplink (connections will be masqueraded)")
-	uplinkInterfaceName = flag.String("docker.uplink_interface", "", "Interface used for uplink (connections will be masqueraded)")
 )

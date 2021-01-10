@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/google/shlex"
-	"go.jonnrb.io/egress/backend/docker"
 	"go.jonnrb.io/egress/backend/kubernetes"
 	"go.jonnrb.io/egress/fw"
 	"go.jonnrb.io/egress/fw/rules"
@@ -152,16 +151,8 @@ func getFWConfig() fw.Config {
 		}
 		return cfg
 	} else {
-		cfg, err := docker.GetConfig(ctx, docker.Params{
-			LANNetwork:      *lanNetwork,
-			FlatNetworks:    strings.Split(*flatNetworks, ","),
-			UplinkNetwork:   *uplinkNetwork,
-			UplinkInterface: *uplinkInterfaceName,
-		})
-		if err != nil {
-			log.Fatalf("Error configuring router from Docker environment: %v", err)
-		}
-		return cfg
+		log.Fatalf("Error configuring router: no available configuration backend")
+		return nil
 	}
 }
 
