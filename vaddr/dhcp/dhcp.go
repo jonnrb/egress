@@ -19,10 +19,24 @@ type VAddr struct {
 	LeaseStore LeaseStore
 }
 
-func (a VAddr) Run(ctx context.Context) (err error) {
+func (a VAddr) Run(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
+	return vaddr.Suite{
+		Wrappers: []vaddr.Wrapper{
+			&vaddrutil.VirtualMAC{
+				Link: a.Link,
+				Addr: a.HWAddr,
+			},
+		},
+		Actives: []vaddr.Active{
+			vaddr.ActiveFunc(a.runWithHWAddr),
+		},
+	}.Run(ctx)
+}
+
+func (a VAddr) runWithHWAddr(ctx context.Context) error {
 	for {
 		l, err := a.getLease(ctx)
 		if err != nil {
@@ -131,22 +145,25 @@ func (a VAddr) holdLease(ctx context.Context, l Lease) error {
 	})
 
 	eg.Go(func() error {
-		s := vaddr.Suite{
-			Wrappers: []vaddr.Wrapper{
-				&vaddrutil.IP{
-					Link: a.Link,
-					Addr: leasedAddr(l),
-				},
-				&vaddrutil.DefaultRoute{
-					Link: a.Link,
-					GW:   gwAddr(l),
-				},
-			},
-		}
-		return s.Run(ctx)
+		return a.applyLease(l).Run(ctx)
 	})
 
 	return eg.Wait()
+}
+
+func (a VAddr) applyLease(l Lease) vaddr.Active {
+	return vaddr.Suite{
+		Wrappers: []vaddr.Wrapper{
+			&vaddrutil.IP{
+				Link: a.Link,
+				Addr: leasedAddr(l),
+			},
+			&vaddrutil.DefaultRoute{
+				Link: a.Link,
+				GW:   gwAddr(l),
+			},
+		},
+	}
 }
 
 func leasedAddr(l Lease) fw.Addr {

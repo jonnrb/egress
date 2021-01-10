@@ -19,7 +19,7 @@ type VirtualMAC struct {
 
 // Applies the consistent MAC address to the device and saves the original MAC
 // address.
-func (a *VirtualMAC) Start(up bool) error {
+func (a *VirtualMAC) Start() error {
 	nl, err := netlink.LinkByName(a.Link.Name())
 	if err != nil {
 		return fmt.Errorf("failed to get link %q: %w", a.Link.Name(), err)

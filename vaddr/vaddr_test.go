@@ -9,25 +9,6 @@ import (
 	"testing"
 )
 
-type WrapperStruct struct {
-	StartFunc func() error
-	StopFunc  func() error
-}
-
-func (s WrapperStruct) Start() error {
-	return s.StartFunc()
-}
-
-func (s WrapperStruct) Stop() error {
-	return s.StopFunc()
-}
-
-type ActiveFunc func(ctx context.Context) error
-
-func (f ActiveFunc) Run(ctx context.Context) error {
-	return f(ctx)
-}
-
 func successfulWrapper(name string) func(func(string)) Wrapper {
 	return func(recordAction func(a string)) Wrapper {
 		return WrapperStruct{
