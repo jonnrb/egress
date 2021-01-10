@@ -16,7 +16,7 @@ type ConfigLANHWAddr interface {
 
 type ConfigLANAddr interface {
 	// The IP+net of the LAN interface expected by local clients.
-	LANAddr() fw.Addr
+	LANAddr() (a fw.Addr, ok bool)
 }
 
 func MakeVAddrLAN(c fw.Config) vaddr.Suite {
@@ -33,37 +33,61 @@ func contributeLANUp(c fw.Config) []vaddr.Wrapper {
 }
 
 func contributeLANVirtualMAC(c fw.Config) (w []vaddr.Wrapper) {
-	if i, ok := c.(ConfigLANHWAddr); ok {
-		w = append(w,
-			&vaddrutil.VirtualMAC{
-				Link: c.LAN(),
-				Addr: i.LANHWAddr(),
-			})
+	i, ok := c.(ConfigLANHWAddr)
+	if !ok {
+		return
 	}
+	hwAddr := i.LANHWAddr()
+	if hwAddr == nil {
+		return
+	}
+	w = append(w,
+		&vaddrutil.VirtualMAC{
+			Link: c.LAN(),
+			Addr: hwAddr,
+		})
 	return
 }
 
 func contributeLANIP(c fw.Config) (w []vaddr.Wrapper) {
-	if i, ok := c.(ConfigLANAddr); ok {
-		w = append(w,
-			&vaddrutil.IP{
-				Link: c.LAN(),
-				Addr: i.LANAddr(),
-			})
+	i, ok := c.(ConfigLANAddr)
+	if !ok {
+		return
 	}
+	var a fw.Addr
+	if a, ok = i.LANAddr(); !ok {
+		return
+	}
+	w = append(w,
+		&vaddrutil.IP{
+			Link: c.LAN(),
+			Addr: a,
+		})
 	return
 }
 
 func contributeLANGratuitousARP(c fw.Config) (w []vaddr.Wrapper) {
-	if i, ok := c.(ConfigLANHWAddr); ok {
-		if j, ok := c.(ConfigLANAddr); ok {
-			w = append(w,
-				&vaddrutil.GratuitousARP{
-					IP:     j.LANAddr().IP,
-					HWAddr: i.LANHWAddr(),
-					Link:   c.LAN(),
-				})
-		}
+	i, ok := c.(ConfigLANHWAddr)
+	if !ok {
+		return
 	}
+	hwAddr := i.LANHWAddr()
+	if hwAddr == nil {
+		return
+	}
+	j, ok := c.(ConfigLANAddr)
+	if !ok {
+		return
+	}
+	var a fw.Addr
+	if a, ok = j.LANAddr(); !ok {
+		return
+	}
+	w = append(w,
+		&vaddrutil.GratuitousARP{
+			IP:     a.IP,
+			HWAddr: hwAddr,
+			Link:   c.LAN(),
+		})
 	return
 }

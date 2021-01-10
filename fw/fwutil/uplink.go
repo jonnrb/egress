@@ -24,7 +24,7 @@ type ConfigUplinkHWAddr interface {
 // it's assumed DHCP will be used.
 type ConfigUplinkAddr interface {
 	// The IP+net of the uplink interface for connection.
-	UplinkAddr() fw.Addr
+	UplinkAddr() (a fw.Addr, ok bool)
 }
 
 // Allows specifying the dhcp.LeaseStore when DHCP is used. DHCP is used when
@@ -52,56 +52,86 @@ func contributeUplinkUp(c fw.Config) []vaddr.Wrapper {
 }
 
 func contributeUplinkVirtualMAC(c fw.Config) (w []vaddr.Wrapper) {
-	if i, ok := c.(ConfigUplinkHWAddr); ok {
-		w = append(w,
-			&vaddrutil.VirtualMAC{
-				Link: c.Uplink(),
-				Addr: i.UplinkHWAddr(),
-			})
+	i, ok := c.(ConfigUplinkHWAddr)
+	if !ok {
+		return
 	}
+	hwAddr := i.UplinkHWAddr()
+	if hwAddr == nil {
+		return
+	}
+	w = append(w,
+		&vaddrutil.VirtualMAC{
+			Link: c.Uplink(),
+			Addr: hwAddr,
+		})
 	return
 }
 
 func contributeUplinkIP(c fw.Config) (w []vaddr.Wrapper) {
-	if i, ok := c.(ConfigUplinkAddr); ok {
-		w = append(w,
-			&vaddrutil.IP{
-				Link: c.Uplink(),
-				Addr: i.UplinkAddr(),
-			})
+	i, ok := c.(ConfigUplinkAddr)
+	if !ok {
+		return
 	}
+	var a fw.Addr
+	if a, ok = i.UplinkAddr(); !ok {
+		return
+	}
+	w = append(w,
+		&vaddrutil.IP{
+			Link: c.Uplink(),
+			Addr: a,
+		})
 	return
 }
 
 func contributeUplinkGratuitousARP(c fw.Config) (w []vaddr.Wrapper) {
-	if i, ok := c.(ConfigUplinkHWAddr); ok {
-		if j, ok := c.(ConfigUplinkAddr); ok {
-			w = append(w,
-				&vaddrutil.GratuitousARP{
-					IP:     j.UplinkAddr().IP,
-					HWAddr: i.UplinkHWAddr(),
-					Link:   c.Uplink(),
-				})
-		}
+	i, ok := c.(ConfigUplinkHWAddr)
+	if !ok {
+		return
 	}
+	hwAddr := i.UplinkHWAddr()
+	if hwAddr == nil {
+		return
+	}
+	j, ok := c.(ConfigUplinkAddr)
+	if !ok {
+		return
+	}
+	var a fw.Addr
+	if a, ok = j.UplinkAddr(); !ok {
+		return
+	}
+	w = append(w,
+		&vaddrutil.GratuitousARP{
+			IP:     a.IP,
+			HWAddr: hwAddr,
+			Link:   c.Uplink(),
+		})
 	return
 }
 
 func contributeUplinkDHCP(c fw.Config) (a []vaddr.Active) {
-	if i, ok := c.(ConfigUplinkHWAddr); ok {
-		if _, ok := c.(ConfigUplinkAddr); ok {
-			return
-		}
-		var ls dhcp.LeaseStore
-		if j, ok := c.(ConfigUplinkLeaseStore); ok {
-			ls = j.UplinkLeaseStore()
-		}
-		a = append(a,
-			&dhcp.VAddr{
-				HWAddr:     i.UplinkHWAddr(),
-				Link:       c.Uplink(),
-				LeaseStore: ls,
-			})
+	i, ok := c.(ConfigUplinkHWAddr)
+	if !ok {
+		return
 	}
+	hwAddr := i.UplinkHWAddr()
+	if hwAddr == nil {
+		return
+	}
+	if _, ok := c.(ConfigUplinkAddr); ok {
+		return
+	}
+	var ls dhcp.LeaseStore
+	if j, ok := c.(ConfigUplinkLeaseStore); ok {
+		ls = j.UplinkLeaseStore()
+	}
+	a = append(a,
+		&dhcp.VAddr{
+			HWAddr:     hwAddr,
+			Link:       c.Uplink(),
+			LeaseStore: ls,
+		})
 	return
 }
