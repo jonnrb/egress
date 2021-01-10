@@ -14,7 +14,8 @@ type GratuitousARP struct {
 	Link   fw.Link
 }
 
-func (a GratuitousARP) Start() error {
+// Sends out a gratuitous ARP to speed up failover resolution.
+func (a *GratuitousARP) Start() error {
 	i, err := net.InterfaceByName(a.Link.Name())
 	if err != nil {
 		return fmt.Errorf(
@@ -42,6 +43,6 @@ func (a GratuitousARP) Start() error {
 var broadcastHWAddr = net.HardwareAddr{255, 255, 255, 255, 255, 255}
 
 // Does nothing since we only gratuitous ARP when bringing up a vaddr.
-func (a GratuitousARP) Stop() error {
+func (a *GratuitousARP) Stop() error {
 	return nil
 }
