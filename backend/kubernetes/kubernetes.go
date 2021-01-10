@@ -38,18 +38,18 @@ type environment struct {
 func loadEnvironment() (env environment, err error) {
 	cli, err := client.Get()
 	if err != nil {
-		err = fmt.Errorf("could not get kubernetes client: %v", err)
+		err = fmt.Errorf("could not get kubernetes client: %w", err)
 		return
 	}
 	env.cli, err = internal.NewCNIClient(cli)
 	if err != nil {
-		err = fmt.Errorf("could not get kubernetes client: %v", err)
+		err = fmt.Errorf("could not get kubernetes client: %w", err)
 		return
 	}
 
 	attachments, err := internal.GetAttachments()
 	if err != nil {
-		err = fmt.Errorf("could not get attached networks: %v", err)
+		err = fmt.Errorf("could not get attached networks: %w", err)
 		return
 	}
 	env.attachments = makeAttachmentMap(attachments)
@@ -61,6 +61,7 @@ func loadEnvironment() (env environment, err error) {
 func getConfigInternal(ctx context.Context, env environment, params Params) (*Config, error) {
 	var (
 		uplink, lan netlink.Link
+		lanAddr     fw.Addr
 		flat        []fw.StaticRoute
 	)
 	grp, ctx := errgroup.WithContext(ctx)
@@ -74,6 +75,10 @@ func getConfigInternal(ctx context.Context, env environment, params Params) (*Co
 		return
 	})
 	grp.Go(func() (err error) {
+		lanAddr, err = getLANGWAddr(ctx, env, params)
+		return
+	})
+	grp.Go(func() (err error) {
 		flat, err = getFlatNetworks(ctx, env, params)
 		return
 	})
@@ -83,35 +88,18 @@ func getConfigInternal(ctx context.Context, env environment, params Params) (*Co
 	}
 
 	return &Config{
-		params: params,
-		uplink: uplink,
-		lan:    lan,
-		flat:   flat,
+		params:  params,
+		uplink:  uplink,
+		lan:     lan,
+		lanAddr: lanAddr,
+		flat:    flat,
 	}, nil
-}
-
-func (c *Config) Activate(ctx context.Context) error {
-	env, err := loadEnvironment()
-	if err != nil {
-		return err
-	}
-
-	net, err := env.cli.Get(ctx, c.params.LANNetwork)
-	if err != nil {
-		return fmt.Errorf("error getting CNI config for network %q: %v", c.params.LANNetwork, err)
-	}
-
-	if err := applyGWIP(c.lan, net); err != nil {
-		return fmt.Errorf("error applying GW IP to LAN interface: %v", err)
-	}
-
-	return nil
 }
 
 func getUplink(env environment, params Params) (netlink.Link, error) {
 	wrappedErr := func(l netlink.Link, err error) (netlink.Link, error) {
 		if err != nil {
-			err = fmt.Errorf("could not get uplink: %v", err)
+			err = fmt.Errorf("could not get uplink: %w", err)
 		}
 		return l, err
 	}
@@ -128,7 +116,8 @@ func getUplink(env environment, params Params) (netlink.Link, error) {
 func getLAN(env environment, params Params) (netlink.Link, error) {
 	lan, err := getLinkForNet(env.attachments, params.LANNetwork)
 	if err != nil {
-		return nil, fmt.Errorf("could not get link for LAN network %q: %v", params.LANNetwork, err)
+		return nil, fmt.Errorf(
+			"could not get link for LAN network %q: %w", params.LANNetwork, err)
 	}
 	return lan, nil
 }
@@ -169,4 +158,28 @@ func getFlatNetLinks(env environment, params Params) (map[string]fw.Link, error)
 		m[net] = link{l.Attrs()}
 	}
 	return m, nil
+}
+
+func getLANGWAddr(ctx context.Context, env environment, params Params) (a fw.Addr, err error) {
+	net, err := env.cli.Get(ctx, params.LANNetwork)
+	if err != nil {
+		err = fmt.Errorf(
+			"kubernetes: error getting CNI config for network %q: %w",
+			params.LANNetwork, err)
+		return
+	}
+
+	for _, r := range net.Ranges {
+		if r.Gateway != nil {
+			ip := r.Gateway.String()
+			bits, _ := r.Subnet.Mask.Size()
+			if a, err = fw.ParseAddr(fmt.Sprintf("%s/%d", ip, bits)); err != nil {
+				panic(fmt.Sprintf(
+					"kubernetes: could not parse cidr address: %v", err))
+			}
+			return
+		}
+	}
+	err = fmt.Errorf("kubernetes: no gateway found in network definition")
+	return
 }
