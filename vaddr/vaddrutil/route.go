@@ -18,7 +18,8 @@ type DefaultRoute struct {
 func (r *DefaultRoute) Start() error {
 	l, err := netlink.LinkByName(r.Link.Name())
 	if err != nil {
-		return fmt.Errorf("failed to get link %q: %w", r.Link.Name(), err)
+		return fmt.Errorf(
+			"vaddrutil: failed to get link %q: %w", r.Link.Name(), err)
 	}
 	gw, err := netlink.ParseAddr(r.GW.String())
 	if err != nil {
@@ -38,23 +39,33 @@ func (r *DefaultRoute) Start() error {
 	if errno, ok := err.(syscall.Errno); ok && errno == unix.EEXIST {
 		err = netlink.RouteReplace(route)
 	}
-	return err
+	if err != nil {
+		return fmt.Errorf(
+			"vaddrutil: could not add/replace route %+v: %w", route, err)
+	}
+	return nil
 }
 
 func (r *DefaultRoute) Stop() error {
 	l, err := netlink.LinkByName(r.Link.Name())
 	if err != nil {
-		return fmt.Errorf("failed to get link %q: %w", r.Link.Name(), err)
+		return fmt.Errorf(
+			"vaddrutil: failed to get link %q: %w", r.Link.Name(), err)
 	}
 	gw, err := netlink.ParseAddr(r.GW.String())
 	if err != nil {
 		panic(fmt.Sprintf(
 			"vaddrutil: bad conversion of fw.Addr to netlink.Addr: %v", err))
 	}
-	return netlink.RouteDel(
-		&netlink.Route{
-			LinkIndex: l.Attrs().Index,
-			Dst:       gw.IPNet,
-			Scope:     netlink.SCOPE_LINK,
-		})
+	route := &netlink.Route{
+		LinkIndex: l.Attrs().Index,
+		Dst:       gw.IPNet,
+		Scope:     netlink.SCOPE_LINK,
+	}
+	err = netlink.RouteDel(route)
+	if err != nil {
+		return fmt.Errorf(
+			"vaddrutil: failed to delete route %+v: %w", route, err)
+	}
+	return nil
 }

@@ -22,19 +22,20 @@ type VirtualMAC struct {
 func (a *VirtualMAC) Start() error {
 	nl, err := netlink.LinkByName(a.Link.Name())
 	if err != nil {
-		return fmt.Errorf("failed to get link %q: %w", a.Link.Name(), err)
+		return fmt.Errorf(
+			"vaddrutil: failed to get link %q: %w", a.Link.Name(), err)
 	}
 
 	a.originalAddr = nl.Attrs().HardwareAddr
 	if bytes.Equal(a.originalAddr, a.Addr) {
 		log.Warningf(
-			"vaddr: link %q already had MAC address %s (setting it anyway...)",
+			"vaddrutil: link %q already had MAC address %s (setting it anyway...)",
 			a.Link.Name(), a.Addr)
 	}
 
 	if err = netlink.LinkSetHardwareAddr(nl, a.Addr); err != nil {
 		return fmt.Errorf(
-			"failed to set link %q MAC address %s: %w",
+			"vaddrutil: failed to set link %q MAC address %s: %w",
 			a.Link.Name(), a.Addr, err)
 	}
 
@@ -44,7 +45,8 @@ func (a *VirtualMAC) Start() error {
 func (a *VirtualMAC) Stop() error {
 	l, err := netlink.LinkByName(a.Link.Name())
 	if err != nil {
-		return fmt.Errorf("failed to get link %q: %w", a.Link.Name(), err)
+		return fmt.Errorf(
+			"vaddrutil: failed to get link %q: %w", a.Link.Name(), err)
 	}
 
 	if a.originalAddr != nil {
@@ -52,7 +54,7 @@ func (a *VirtualMAC) Stop() error {
 	}
 	if err != nil {
 		return fmt.Errorf(
-			"failed to set link %q MAC address %s: %w",
+			"vaddrutil: failed to set link %q MAC address %s: %w",
 			a.Link.Name(), a.originalAddr, err)
 	}
 

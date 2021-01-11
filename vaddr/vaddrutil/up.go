@@ -14,15 +14,27 @@ type Up struct {
 func (a *Up) Start() error {
 	l, err := netlink.LinkByName(a.Link.Name())
 	if err != nil {
-		return fmt.Errorf("failed to get link %q: %w", a.Link.Name(), err)
+		return fmt.Errorf(
+			"vaddrutil: failed to get link %q: %w", a.Link.Name(), err)
 	}
-	return netlink.LinkSetUp(l)
+	err = netlink.LinkSetUp(l)
+	if err != nil {
+		return fmt.Errorf(
+			"vaddrutil: failed to up link %q: %w", a.Link.Name(), err)
+	}
+	return nil
 }
 
 func (a *Up) Stop() error {
 	l, err := netlink.LinkByName(a.Link.Name())
 	if err != nil {
-		return fmt.Errorf("failed to get link %q: %w", a.Link.Name(), err)
+		return fmt.Errorf(
+			"vaddrutil: failed to get link %q: %w", a.Link.Name(), err)
 	}
-	return netlink.LinkSetDown(l)
+	err = netlink.LinkSetDown(l)
+	if err != nil {
+		return fmt.Errorf(
+			"vaddrutil: failed to down link %q: %w", a.Link.Name(), err)
+	}
+	return nil
 }
