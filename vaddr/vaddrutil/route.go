@@ -2,6 +2,7 @@ package vaddrutil
 
 import (
 	"fmt"
+	"net"
 	"syscall"
 
 	"github.com/vishvananda/netlink"
@@ -26,8 +27,11 @@ func (r *DefaultRoute) Start() error {
 	}
 	route := &netlink.Route{
 		LinkIndex: l.Attrs().Index,
-		Dst:       gw.IPNet,
-		Scope:     netlink.SCOPE_LINK,
+		Gw:        gw.IP,
+		Dst: &net.IPNet{
+			IP:   net.ParseIP("0.0.0.0"),
+			Mask: net.CIDRMask(32, 0),
+		},
 	}
 	err = netlink.RouteAdd(route)
 	// EEXIST is ok.
