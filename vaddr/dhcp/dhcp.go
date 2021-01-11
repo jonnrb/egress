@@ -106,7 +106,10 @@ func (a VAddr) getLease(ctx context.Context) (l Lease, err error) {
 }
 
 func (a VAddr) requestLease(ctx context.Context) (l Lease, err error) {
-	c, err := nclient4.New(a.Link.Name(), nclient4.WithHWAddr(a.HWAddr))
+	c, err := nclient4.New(
+		a.Link.Name(),
+		nclient4.WithHWAddr(a.HWAddr),
+		nclient4.WithRetry(15))
 	if err != nil {
 		err = fmt.Errorf("could not create dhcp client: %w", err)
 		return
