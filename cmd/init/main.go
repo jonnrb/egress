@@ -42,6 +42,8 @@ func main() {
 		fwutil.MakeVAddrLAN(cfg),
 		fwutil.MakeVAddrUplink(cfg))
 
+	log.V(2).Infof("Got virtual addresses from config: %+v", va)
+
 	if *noCmd && !*justMetrics && !vaddr.HasActive(va) {
 		// Skip some stuff if noCmd.
 		applyFWRules(cfg, extraRules)
