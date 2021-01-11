@@ -179,6 +179,11 @@ func (a VAddr) applyLease(l Lease) vaddr.Active {
 				IP:     l.LeasedIP,
 			},
 		},
+		Actives: []vaddr.Active{
+			vaddr.ActiveFunc(func(ctx context.Context) error {
+				<-ctx.Done()
+				return nil
+			})},
 	}
 }
 
