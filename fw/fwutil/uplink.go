@@ -44,7 +44,7 @@ func MakeVAddrUplink(c fw.Config) vaddr.Suite {
 	w = append(w, contributeUplinkIP(c)...)
 	w = append(w, contributeUplinkGratuitousARP(c)...)
 	a = append(a, contributeUplinkDHCP(c)...)
-	return vaddr.Suite{Wrappers: w}
+	return vaddr.Suite{Wrappers: w, Actives: a}
 }
 
 func contributeUplinkUp(c fw.Config) []vaddr.Wrapper {
