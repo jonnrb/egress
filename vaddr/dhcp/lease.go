@@ -55,13 +55,14 @@ func (r rawLease) ToLease() (l Lease, err error) {
 	if err != nil {
 		return
 	}
-	l.GatewayIP, err = r.GatewayIP()
-	if err != nil {
-		return
-	}
 	l.ServerIP, err = r.ServerIP()
 	if err != nil {
 		return
+	}
+	l.GatewayIP, err = r.GatewayIP()
+	if err != nil {
+		l.GatewayIP = l.ServerIP
+		err = nil
 	}
 	l.StartTime = r.CreationTime
 	l.Duration, err = r.LeaseTime(defaultLeaseTime)
