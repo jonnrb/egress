@@ -16,12 +16,13 @@ import (
 	"github.com/google/shlex"
 	"go.jonnrb.io/egress/backend/kubernetes"
 	"go.jonnrb.io/egress/fw"
+	"go.jonnrb.io/egress/fw/fwutil"
 	"go.jonnrb.io/egress/fw/rules"
 	"go.jonnrb.io/egress/health"
 	"go.jonnrb.io/egress/log"
 	"go.jonnrb.io/egress/metrics"
 	"go.jonnrb.io/egress/util"
-	"golang.org/x/sync/errgroup"
+	"go.jonnrb.io/egress/vaddr"
 )
 
 func main() {
@@ -36,14 +37,26 @@ func main() {
 	// Create things that aren't bound by the main context.Context.
 	maybeCreateNetworks()
 	cfg := getFWConfig()
-	if *noCmd && !*justMetrics {
+
+	va := vaddr.Join(
+		fwutil.MakeVAddrLAN(cfg),
+		fwutil.MakeVAddrUplink(cfg))
+
+	if *noCmd && !*justMetrics && !vaddr.HasActive(va) {
 		// Skip some stuff if noCmd.
 		applyFWRules(cfg, extraRules)
+		onlyStartVAddr(va)
 		return
 	}
 
 	httpCfg := listenHTTP()
 	if *justMetrics {
+		if vaddr.HasActive(va) {
+			log.V(2).Infof(
+				"Have active virtual addresses in vaddr.Suite: %+v", va)
+			log.Fatalf(
+				"Trying to run with -justMetrics when active virtual addresses configured")
+		}
 		ctx := context.Background()
 		setupHTTPHandlers(ctx, cfg, httpCfg)
 		httpServeContext(ctx, httpCfg)
@@ -52,22 +65,22 @@ func main() {
 
 	applyFWRules(cfg, extraRules)
 
-	// Create the root context.Context.
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	setupHTTPHandlers(ctx, cfg, httpCfg)
 
 	// Create the steady-state.
-	grp, ctx := errgroup.WithContext(ctx)
-	grp.Go(func() error {
-		return httpServeContext(ctx, httpCfg)
-	})
-	grp.Go(func() error {
-		return runSubprocess(ctx, args)
-	})
+	va.Actives = append(va.Actives,
+		vaddr.ActiveFunc(func(ctx context.Context) error {
+			return httpServeContext(ctx, httpCfg)
+		}))
+	va.Actives = append(va.Actives,
+		vaddr.ActiveFunc(func(ctx context.Context) error {
+			return runSubprocess(ctx, args)
+		}))
 
-	switch err := grp.Wait(); err {
+	switch err := va.Run(ctx); err {
 	case errSubprocessExited, http.ErrServerClosed, nil:
 	default:
 		log.Fatal(err)
@@ -208,11 +221,20 @@ func openHTTPPort() rules.Rule {
 }
 
 func applyFWRules(cfg fw.Config, extraRules rules.RuleSet) {
-	maybeActivateFWConfig(cfg)
-
 	log.V(2).Info("Applying fw rules from environment")
 	if err := fw.Apply(fw.WithExtraRules(cfg, extraRules)); err != nil {
 		log.Fatalf("Error applying fw rules: %v", err)
+	}
+}
+
+func onlyStartVAddr(s vaddr.Suite) {
+	log.V(2).Info("Bringing up virtual addresses")
+	w, _ := vaddr.Split(s)
+	err := w.Start()
+	if err != nil {
+		log.V(2).Infof(
+			"Could not bring up virtual addresses from vaddr.Suite: %+v", s)
+		log.Fatalf("Error bringing up virtual addresses: %v", err)
 	}
 }
 
