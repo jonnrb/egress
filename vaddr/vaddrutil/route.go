@@ -24,15 +24,15 @@ func (r *DefaultRoute) Start() error {
 		panic(fmt.Sprintf(
 			"vaddrutil: bad conversion of fw.Addr to netlink.Addr: %v", err))
 	}
-	err = netlink.RouteAdd(
-		&netlink.Route{
-			LinkIndex: l.Attrs().Index,
-			Dst:       gw.IPNet,
-			Scope:     netlink.SCOPE_LINK,
-		})
+	route := &netlink.Route{
+		LinkIndex: l.Attrs().Index,
+		Dst:       gw.IPNet,
+		Scope:     netlink.SCOPE_LINK,
+	}
+	err = netlink.RouteAdd(route)
 	// EEXIST is ok.
 	if errno, ok := err.(syscall.Errno); ok && errno == unix.EEXIST {
-		return nil
+		err = netlink.RouteReplace(route)
 	}
 	return err
 }
