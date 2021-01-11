@@ -8,6 +8,7 @@ import (
 
 	"github.com/insomniacslk/dhcp/dhcpv4/nclient4"
 	"go.jonnrb.io/egress/fw"
+	"go.jonnrb.io/egress/log"
 	"go.jonnrb.io/egress/vaddr"
 	"go.jonnrb.io/egress/vaddr/vaddrutil"
 	"golang.org/x/sync/errgroup"
@@ -38,15 +39,21 @@ func (a VAddr) Run(ctx context.Context) error {
 
 func (a VAddr) runWithHWAddr(ctx context.Context) error {
 	for {
+		log.V(2).Infof("Requesting a DHCP lease on %v", a.Link.Name())
+
 		l, err := a.getLease(ctx)
 		if err != nil {
 			return err
 		}
 
+		log.V(2).Infof("Got DHCP lease for %v: %+v", a.Link.Name(), l)
+
 		err = a.holdLease(ctx, l)
 		if err != nil {
 			return err
 		}
+
+		log.V(2).Infof("Lease for %v expired", a.Link.Name())
 	}
 }
 
