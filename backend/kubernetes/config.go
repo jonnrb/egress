@@ -39,7 +39,7 @@ func (params Params) check() error {
 	if params.LANNetwork == "" {
 		return fmt.Errorf("lanNetwork must be specified")
 	}
-	if _, err := net.ParseMAC(params.LANMACAddress); err == nil || params.LANMACAddress == "" {
+	if _, err := net.ParseMAC(params.LANMACAddress); err != nil && params.LANMACAddress != "" {
 		return fmt.Errorf("if lanMACAddress is specified, it must be valid: %w", err)
 	}
 	if params.UplinkNetwork == "" && params.UplinkInterface == "" {
@@ -48,10 +48,10 @@ func (params Params) check() error {
 	if params.UplinkNetwork != "" && params.UplinkInterface != "" {
 		return fmt.Errorf("cannot specify both uplinkNetwork and uplinkInterface")
 	}
-	if _, err := net.ParseMAC(params.UplinkMACAddress); err == nil || params.UplinkMACAddress == "" {
+	if _, err := net.ParseMAC(params.UplinkMACAddress); err != nil && params.UplinkMACAddress != "" {
 		return fmt.Errorf("if uplinkMACAddress is specified, it must be valid: %w", err)
 	}
-	if _, err := fw.ParseAddr(params.UplinkIPAddress); err == nil || params.UplinkIPAddress == "" {
+	if _, err := fw.ParseAddr(params.UplinkIPAddress); err != nil && params.UplinkIPAddress != "" {
 		return fmt.Errorf("if uplinkIPAddress is specified, it must be valid: %w", err)
 	}
 	return nil
