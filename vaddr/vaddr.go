@@ -32,6 +32,13 @@ func (f ActiveFunc) Run(ctx context.Context) error {
 	return f(ctx)
 }
 
+type ActiveWaiter struct{}
+
+func (ActiveWaiter) Run(ctx context.Context) error {
+	<-ctx.Done()
+	return nil
+}
+
 type Suite struct {
 	Wrappers []Wrapper
 	Actives  []Active

@@ -101,7 +101,8 @@ func (a VAddr) getLease(ctx context.Context) (l Lease, err error) {
 			return
 		}
 	}
-	err = fmt.Errorf("dhcp: could not get unexpired lease; last lease seen: %+v", l)
+	err = fmt.Errorf(
+		"dhcp: could not get unexpired lease; last lease seen: %+v", l)
 	return
 }
 
@@ -112,7 +113,7 @@ func (a VAddr) requestLease(ctx context.Context) (l Lease, err error) {
 		nclient4.WithRetry(45),
 		nclient4.WithSummaryLogger())
 	if err != nil {
-		err = fmt.Errorf("could not create dhcp client: %w", err)
+		err = fmt.Errorf("dhcp: could not create dhcp client: %w", err)
 		return
 	}
 	defer c.Close()
@@ -125,6 +126,7 @@ func (a VAddr) requestLease(ctx context.Context) (l Lease, err error) {
 	// lease.
 	rl, err := newRawLease(c.Request(ctx))
 	if err != nil {
+		err = fmt.Errorf("dhcp: could not get lease from network: %w", err)
 		return
 	}
 
@@ -139,7 +141,12 @@ func (a VAddr) holdLease(ctx context.Context, l Lease) error {
 
 	if a.LeaseStore != nil {
 		eg.Go(func() error {
-			return a.LeaseStore.Put(ctx, l)
+			err := a.LeaseStore.Put(ctx, l)
+			if err != nil {
+				return fmt.Errorf(
+					"dhcp: error putting lease into lease store: %w", err)
+			}
+			return nil
 		})
 	}
 
@@ -156,7 +163,11 @@ func (a VAddr) holdLease(ctx context.Context, l Lease) error {
 	})
 
 	eg.Go(func() error {
-		return a.applyLease(l).Run(ctx)
+		err := a.applyLease(l).Run(ctx)
+		if err != nil {
+			return fmt.Errorf("dhcp: error applying lease: %w", err)
+		}
+		return nil
 	})
 
 	return eg.Wait()
@@ -179,11 +190,7 @@ func (a VAddr) applyLease(l Lease) vaddr.Active {
 				IP:     l.LeasedIP,
 			},
 		},
-		Actives: []vaddr.Active{
-			vaddr.ActiveFunc(func(ctx context.Context) error {
-				<-ctx.Done()
-				return nil
-			})},
+		Actives: []vaddr.Active{vaddr.ActiveWaiter{}},
 	}
 }
 
