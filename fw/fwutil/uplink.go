@@ -120,8 +120,10 @@ func contributeUplinkDHCP(c fw.Config) (a []vaddr.Active) {
 	if hwAddr == nil {
 		return
 	}
-	if _, ok := c.(ConfigUplinkAddr); ok {
-		return
+	if j, ok := c.(ConfigUplinkAddr); ok {
+		if _, ok := j.UplinkAddr(); ok {
+			return
+		}
 	}
 	var ls dhcp.LeaseStore
 	if j, ok := c.(ConfigUplinkLeaseStore); ok {
