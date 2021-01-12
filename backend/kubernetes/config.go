@@ -156,6 +156,15 @@ func (cfg *Config) HACoordinator() ha.Coordinator {
 		panic(fmt.Sprintf(
 			"params.check() should make this condition impossible: %v", err))
 	}
+	if leaseDuration == 0 {
+		leaseDuration = 10 * time.Second
+	}
+	if renewDeadline == 0 {
+		renewDeadline = 5 * time.Second
+	}
+	if retryPeriod == 0 {
+		retryPeriod = 1 * time.Second
+	}
 	return &coordinator.Coordinator{
 		LockName:      lockName,
 		LockNamespace: lockNamespace,
