@@ -70,7 +70,8 @@ func (a VAddr) getLease(ctx context.Context) (l Lease, err error) {
 	defer cancel()
 
 	c := make(chan Lease, len(gs))
-	for _, g := range gs {
+	for i := range gs {
+		g := gs[i]
 		eg.Go(func() error {
 			if l, err := g(ctx); err != nil {
 				return err
