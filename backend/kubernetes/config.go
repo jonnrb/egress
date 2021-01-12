@@ -6,20 +6,24 @@ import (
 	"io"
 	"net"
 	"os"
+	"strings"
 
 	"github.com/vishvananda/netlink"
+	"go.jonnrb.io/egress/backend/kubernetes/leasestore"
 	"go.jonnrb.io/egress/fw"
 	"go.jonnrb.io/egress/fw/rules"
+	"go.jonnrb.io/egress/vaddr/dhcp"
 )
 
 type Params struct {
-	LANNetwork       string   `json:"lanNetwork"`
-	LANMACAddress    string   `json:"lanMACAddress"`
-	FlatNetworks     []string `json:"flatNetworks"`
-	UplinkNetwork    string   `json:"uplinkNetwork"`
-	UplinkInterface  string   `json:"uplinkInterface"`
-	UplinkMACAddress string   `json:"uplinkMACAddress"`
-	UplinkIPAddress  string   `json:"uplinkIPAddress"`
+	LANNetwork           string   `json:"lanNetwork"`
+	LANMACAddress        string   `json:"lanMACAddress"`
+	FlatNetworks         []string `json:"flatNetworks"`
+	UplinkNetwork        string   `json:"uplinkNetwork"`
+	UplinkInterface      string   `json:"uplinkInterface"`
+	UplinkMACAddress     string   `json:"uplinkMACAddress"`
+	UplinkIPAddress      string   `json:"uplinkIPAddress"`
+	UplinkLeaseConfigMap string   `json:"uplinkLeaseConfigMap"`
 }
 
 // Reads params from the file `/etc/config/egress.json`.
@@ -53,6 +57,9 @@ func (params Params) check() error {
 	}
 	if _, err := fw.ParseAddr(params.UplinkIPAddress); err != nil && params.UplinkIPAddress != "" {
 		return fmt.Errorf("if uplinkIPAddress is specified, it must be valid: %w", err)
+	}
+	if _, _, err := params.uplinkLeaseStoreName(); params.UplinkLeaseConfigMap != "" && err != nil {
+		return fmt.Errorf("if uplinkLeaseStoreName is specified, it must be valid: %w", err)
 	}
 	return nil
 }
@@ -97,6 +104,35 @@ func (cfg *Config) UplinkHWAddr() net.HardwareAddr {
 		return nil
 	}
 	return a
+}
+
+func (cfg *Config) UplinkLeaseStore() dhcp.LeaseStore {
+	if cfg.params.UplinkLeaseConfigMap == "" {
+		return nil
+	}
+	ns, name, err := cfg.params.uplinkLeaseStoreName()
+	if err != nil {
+		panic(fmt.Sprintf(
+			"kubernetes: should have been checked on the way in: %v", err))
+	}
+	return &leasestore.LeaseStore{
+		Name:      name,
+		Namespace: ns,
+	}
+}
+
+func (params Params) uplinkLeaseStoreName() (ns, name string, err error) {
+	cm := params.UplinkLeaseConfigMap
+	v := strings.SplitN(cm, "/", 3)
+	switch len(v) {
+	case 1:
+		name = v[0]
+	case 2:
+		ns, name = v[0], v[1]
+	default:
+		err = fmt.Errorf("kubernetes: invalid namespace/name string: %q", cm)
+	}
+	return
 }
 
 func (cfg *Config) FlatNetworks() []fw.StaticRoute {
