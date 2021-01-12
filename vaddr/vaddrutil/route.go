@@ -16,9 +16,42 @@ type DefaultRoute struct {
 }
 
 func (r *DefaultRoute) Start() error {
-	l, err := netlink.LinkByName(r.Link.Name())
+	route, err := r.route()
+	if err != nil {
+		return err
+	}
+	err = netlink.RouteAdd(route)
+	// EEXIST is ok.
+	if errno, ok := err.(syscall.Errno); ok && errno == unix.EEXIST {
+		err = netlink.RouteReplace(route)
+	}
 	if err != nil {
 		return fmt.Errorf(
+			"vaddrutil: could not add/replace route %+v: %w", route, err)
+	}
+	return nil
+}
+
+func (r *DefaultRoute) Stop() error {
+	route, err := r.route()
+	if err != nil {
+		return err
+	}
+	err = netlink.RouteDel(route)
+	if errno, ok := err.(syscall.Errno); ok && errno == unix.ESRCH {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf(
+			"vaddrutil: failed to delete route %+v: %w", route, err)
+	}
+	return nil
+}
+
+func (r *DefaultRoute) route() (*netlink.Route, error) {
+	l, err := netlink.LinkByName(r.Link.Name())
+	if err != nil {
+		return nil, fmt.Errorf(
 			"vaddrutil: failed to get link %q: %w", r.Link.Name(), err)
 	}
 	gw, err := netlink.ParseAddr(r.GW.String())
@@ -34,38 +67,5 @@ func (r *DefaultRoute) Start() error {
 			Mask: net.CIDRMask(32, 0),
 		},
 	}
-	err = netlink.RouteAdd(route)
-	// EEXIST is ok.
-	if errno, ok := err.(syscall.Errno); ok && errno == unix.EEXIST {
-		err = netlink.RouteReplace(route)
-	}
-	if err != nil {
-		return fmt.Errorf(
-			"vaddrutil: could not add/replace route %+v: %w", route, err)
-	}
-	return nil
-}
-
-func (r *DefaultRoute) Stop() error {
-	l, err := netlink.LinkByName(r.Link.Name())
-	if err != nil {
-		return fmt.Errorf(
-			"vaddrutil: failed to get link %q: %w", r.Link.Name(), err)
-	}
-	gw, err := netlink.ParseAddr(r.GW.String())
-	if err != nil {
-		panic(fmt.Sprintf(
-			"vaddrutil: bad conversion of fw.Addr to netlink.Addr: %v", err))
-	}
-	route := &netlink.Route{
-		LinkIndex: l.Attrs().Index,
-		Dst:       gw.IPNet,
-		Scope:     netlink.SCOPE_LINK,
-	}
-	err = netlink.RouteDel(route)
-	if err != nil {
-		return fmt.Errorf(
-			"vaddrutil: failed to delete route %+v: %w", route, err)
-	}
-	return nil
+	return route, nil
 }
