@@ -18,11 +18,13 @@ import (
 	"go.jonnrb.io/egress/fw"
 	"go.jonnrb.io/egress/fw/fwutil"
 	"go.jonnrb.io/egress/fw/rules"
+	"go.jonnrb.io/egress/ha"
 	"go.jonnrb.io/egress/health"
 	"go.jonnrb.io/egress/log"
 	"go.jonnrb.io/egress/metrics"
 	"go.jonnrb.io/egress/util"
 	"go.jonnrb.io/egress/vaddr"
+	"go.jonnrb.io/egress/vaddr/vaddrha"
 )
 
 func main() {
@@ -38,11 +40,18 @@ func main() {
 	maybeCreateNetworks()
 	cfg := getFWConfig()
 
+	// Get the ha.Coordinator (if configured).
+	hac := fwutil.GetHACoordinator(cfg)
+	var m ha.MemberGroup
+
 	va := vaddr.Join(
 		fwutil.MakeVAddrLAN(cfg),
 		fwutil.MakeVAddrUplink(cfg))
 
 	if *noCmd && !*justMetrics && !vaddr.HasActive(va) {
+		if hac != nil {
+			log.Warning("HA is configured but -noCmd was specified.")
+		}
 		// Skip some stuff if noCmd.
 		applyFWRules(cfg, extraRules)
 		onlyStartVAddr(va)
@@ -52,13 +61,14 @@ func main() {
 	httpCfg := listenHTTP()
 	if *justMetrics {
 		if vaddr.HasActive(va) {
-			log.V(2).Infof(
-				"Have active virtual addresses in vaddr.Suite: %+v", va)
 			log.Fatalf(
 				"Trying to run with -justMetrics when active virtual addresses configured")
 		}
+		if hac != nil {
+			log.Warning("Running with -justMetrics but HA is configured.")
+		}
 		ctx := context.Background()
-		setupHTTPHandlers(ctx, cfg, httpCfg)
+		setupHTTPHandlers(ctx, cfg, httpCfg, nil)
 		httpServeContext(ctx, httpCfg)
 		return
 	}
@@ -68,7 +78,7 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	setupHTTPHandlers(ctx, cfg, httpCfg)
+	setupHTTPHandlers(ctx, cfg, httpCfg, &m)
 
 	// Create the steady-state.
 	va.Actives = append(va.Actives,
@@ -80,10 +90,19 @@ func main() {
 			return runSubprocess(ctx, args)
 		}))
 
-	switch err := va.Run(ctx); err {
-	case errSubprocessExited, http.ErrServerClosed, nil:
-	default:
-		log.Fatal(err)
+	if hac != nil {
+		m.Add(vaddrha.New(va))
+		switch err := hac.Run(ctx, &m); err {
+		case errSubprocessExited, http.ErrServerClosed, nil:
+		default:
+			log.Fatal(err)
+		}
+	} else {
+		switch err := va.Run(ctx); err {
+		case errSubprocessExited, http.ErrServerClosed, nil:
+		default:
+			log.Fatal(err)
+		}
 	}
 }
 
@@ -275,16 +294,20 @@ func getOpenPortRules() (r rules.RuleSet) {
 	return
 }
 
-func setupHTTPHandlers(ctx context.Context, cfg fw.Config, httpCfg httpConfig) {
+func setupHTTPHandlers(ctx context.Context, cfg fw.Config, httpCfg httpConfig, m *ha.MemberGroup) {
 	metricsHandler, err := metrics.New(ctx, metrics.Config{
 		UplinkName: cfg.Uplink().Name(),
 	})
 	if err != nil {
 		log.Fatalf("Error setting up metrics: %v", err)
 	}
+	var mr func(m ha.Member)
+	if m != nil {
+		mr = m.Add
+	}
 
 	httpCfg.mux.Handle("/metrics", metricsHandler)
-	httpCfg.mux.Handle("/healthz", health.New(ctx, nil))
+	httpCfg.mux.Handle("/healthz", health.New(ctx, mr))
 }
 
 func httpServeContext(ctx context.Context, cfg httpConfig) error {
