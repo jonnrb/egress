@@ -3,12 +3,15 @@ package kubernetes
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/vishvananda/netlink"
 	"go.jonnrb.io/egress/backend/kubernetes/client"
 	"go.jonnrb.io/egress/backend/kubernetes/internal"
+	"go.jonnrb.io/egress/backend/kubernetes/leasestore"
 	"go.jonnrb.io/egress/fw"
 	"go.jonnrb.io/egress/log"
+	"go.jonnrb.io/egress/vaddr/dhcp"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -60,9 +63,10 @@ func loadEnvironment() (env environment, err error) {
 
 func getConfigInternal(ctx context.Context, env environment, params Params) (*Config, error) {
 	var (
-		uplink, lan netlink.Link
-		lanAddr     fw.Addr
-		flat        []fw.StaticRoute
+		uplink, lan      netlink.Link
+		lanAddr          fw.Addr
+		flat             []fw.StaticRoute
+		uplinkLeaseStore dhcp.LeaseStore
 	)
 	grp, ctx := errgroup.WithContext(ctx)
 
@@ -82,17 +86,22 @@ func getConfigInternal(ctx context.Context, env environment, params Params) (*Co
 		flat, err = getFlatNetworks(ctx, env, params)
 		return
 	})
+	grp.Go(func() (err error) {
+		uplinkLeaseStore, err = getUplinkLeaseStore(params)
+		return
+	})
 
 	if err := grp.Wait(); err != nil {
 		return nil, err
 	}
 
 	return &Config{
-		params:  params,
-		uplink:  uplink,
-		lan:     lan,
-		lanAddr: lanAddr,
-		flat:    flat,
+		params:           params,
+		uplink:           uplink,
+		uplinkLeaseStore: uplinkLeaseStore,
+		lan:              lan,
+		lanAddr:          lanAddr,
+		flat:             flat,
 	}, nil
 }
 
@@ -181,5 +190,38 @@ func getLANGWAddr(ctx context.Context, env environment, params Params) (a fw.Add
 		}
 	}
 	err = fmt.Errorf("kubernetes: no gateway found in network definition")
+	return
+}
+
+func getUplinkLeaseStore(params Params) (dhcp.LeaseStore, error) {
+	if params.UplinkLeaseConfigMap == "" {
+		return nil, nil
+	}
+	ns, name, err := params.uplinkLeaseStoreName()
+	if err != nil {
+		panic(fmt.Sprintf(
+			"kubernetes: should have been checked on the way in: %v", err))
+	}
+	ls, err := leasestore.New()
+	if err != nil {
+		return nil, fmt.Errorf(
+			"kubernetes: could not create LeaseStore: %w", err)
+	}
+	ls.Name = name
+	ls.Namespace = ns
+	return ls, nil
+}
+
+func (params Params) uplinkLeaseStoreName() (ns, name string, err error) {
+	cm := params.UplinkLeaseConfigMap
+	v := strings.SplitN(cm, "/", 3)
+	switch len(v) {
+	case 1:
+		name = v[0]
+	case 2:
+		ns, name = v[0], v[1]
+	default:
+		err = fmt.Errorf("kubernetes: invalid namespace/name string: %q", cm)
+	}
 	return
 }

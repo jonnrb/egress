@@ -6,10 +6,8 @@ import (
 	"io"
 	"net"
 	"os"
-	"strings"
 
 	"github.com/vishvananda/netlink"
-	"go.jonnrb.io/egress/backend/kubernetes/leasestore"
 	"go.jonnrb.io/egress/fw"
 	"go.jonnrb.io/egress/fw/rules"
 	"go.jonnrb.io/egress/vaddr/dhcp"
@@ -65,11 +63,12 @@ func (params Params) check() error {
 }
 
 type Config struct {
-	params  Params
-	lan     netlink.Link
-	lanAddr fw.Addr
-	uplink  netlink.Link
-	flat    []fw.StaticRoute
+	params           Params
+	uplink           netlink.Link
+	uplinkLeaseStore dhcp.LeaseStore
+	lan              netlink.Link
+	lanAddr          fw.Addr
+	flat             []fw.StaticRoute
 }
 
 type link struct{ *netlink.LinkAttrs }
@@ -107,32 +106,7 @@ func (cfg *Config) UplinkHWAddr() net.HardwareAddr {
 }
 
 func (cfg *Config) UplinkLeaseStore() dhcp.LeaseStore {
-	if cfg.params.UplinkLeaseConfigMap == "" {
-		return nil
-	}
-	ns, name, err := cfg.params.uplinkLeaseStoreName()
-	if err != nil {
-		panic(fmt.Sprintf(
-			"kubernetes: should have been checked on the way in: %v", err))
-	}
-	return &leasestore.LeaseStore{
-		Name:      name,
-		Namespace: ns,
-	}
-}
-
-func (params Params) uplinkLeaseStoreName() (ns, name string, err error) {
-	cm := params.UplinkLeaseConfigMap
-	v := strings.SplitN(cm, "/", 3)
-	switch len(v) {
-	case 1:
-		name = v[0]
-	case 2:
-		ns, name = v[0], v[1]
-	default:
-		err = fmt.Errorf("kubernetes: invalid namespace/name string: %q", cm)
-	}
-	return
+	return cfg.uplinkLeaseStore
 }
 
 func (cfg *Config) FlatNetworks() []fw.StaticRoute {
