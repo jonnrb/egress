@@ -75,8 +75,9 @@ func (c *LeaseStore) Put(ctx context.Context, l dhcp.Lease) error {
 			configMapKey: serializeLease(l),
 		},
 	}
-	if _, err := cmi.Create(ctx, &cm, metav1.CreateOptions{}); err == nil {
-		return nil
+	_, err = cmi.Create(ctx, &cm, metav1.CreateOptions{})
+	if err != nil && !errors.IsAlreadyExists(err) {
+		return err
 	}
 	b, err := json.Marshal(corev1.ConfigMap{BinaryData: cm.BinaryData})
 	if err != nil {
