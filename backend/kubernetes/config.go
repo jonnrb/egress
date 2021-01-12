@@ -147,7 +147,7 @@ func (cfg *Config) HACoordinator() ha.Coordinator {
 		return nil
 	}
 	var (
-		lockName, lockNamespace, err = splitNamespaceName(cfg.params.HA.LockName)
+		lockNamespace, lockName, err = splitNamespaceName(cfg.params.HA.LockName)
 		leaseDuration, _             = time.ParseDuration(cfg.params.HA.LeaseDuration)
 		renewDeadline, _             = time.ParseDuration(cfg.params.HA.RenewDeadline)
 		retryPeriod, _               = time.ParseDuration(cfg.params.HA.RetryPeriod)
