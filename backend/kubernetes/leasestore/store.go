@@ -54,8 +54,9 @@ func (c *LeaseStore) Get(ctx context.Context) (l dhcp.Lease, err error) {
 			// Return an empty lease. This will never be valid since it will
 			// appear to be waaaay in the past.
 			err = nil
+		} else {
+			err = fmt.Errorf("leasestore: could not get lease: %w", err)
 		}
-		err = fmt.Errorf("leasestore: could not get lease: %w", err)
 		return
 	}
 	d, ok := cm.BinaryData[configMapKey]
