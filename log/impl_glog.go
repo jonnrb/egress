@@ -21,33 +21,33 @@ func getV(level Level) InfoLog {
 type glogger struct{}
 
 func (glogger) Fatal(args ...interface{}) {
-	glog.FatalDepth(3, fmt.Sprintln(args...))
+	glog.FatalDepth(2, fmt.Sprintln(args...))
 }
 
 func (glogger) Fatalf(format string, args ...interface{}) {
-	glog.FatalDepth(3, fmt.Sprintf(format, args...))
+	glog.FatalDepth(2, fmt.Sprintf(format, args...))
 }
 
 func (glogger) Error(args ...interface{}) {
-	glog.ErrorDepth(3, fmt.Sprintln(args...))
+	glog.ErrorDepth(2, fmt.Sprintln(args...))
 }
 
 func (glogger) Errorf(format string, args ...interface{}) {
-	glog.ErrorDepth(3, fmt.Sprintf(format, args...))
+	glog.ErrorDepth(2, fmt.Sprintf(format, args...))
 }
 
 func (glogger) Warning(args ...interface{}) {
-	glog.WarningDepth(3, fmt.Sprintln(args...))
+	glog.WarningDepth(2, fmt.Sprintln(args...))
 }
 
 func (glogger) Warningf(format string, args ...interface{}) {
-	glog.WarningDepth(3, fmt.Sprintf(format, args...))
+	glog.WarningDepth(2, fmt.Sprintf(format, args...))
 }
 
 func (glogger) Info(args ...interface{}) {
-	glog.InfoDepth(3, fmt.Sprintln(args...))
+	glog.InfoDepth(2, fmt.Sprintln(args...))
 }
 
 func (glogger) Infof(format string, args ...interface{}) {
-	glog.InfoDepth(3, fmt.Sprintf(format, args...))
+	glog.InfoDepth(2, fmt.Sprintf(format, args...))
 }
