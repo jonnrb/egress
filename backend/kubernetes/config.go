@@ -6,22 +6,33 @@ import (
 	"io"
 	"net"
 	"os"
+	"time"
 
 	"github.com/vishvananda/netlink"
+	"go.jonnrb.io/egress/backend/kubernetes/coordinator"
 	"go.jonnrb.io/egress/fw"
 	"go.jonnrb.io/egress/fw/rules"
+	"go.jonnrb.io/egress/ha"
 	"go.jonnrb.io/egress/vaddr/dhcp"
 )
 
 type Params struct {
-	LANNetwork           string   `json:"lanNetwork"`
-	LANMACAddress        string   `json:"lanMACAddress"`
-	FlatNetworks         []string `json:"flatNetworks"`
-	UplinkNetwork        string   `json:"uplinkNetwork"`
-	UplinkInterface      string   `json:"uplinkInterface"`
-	UplinkMACAddress     string   `json:"uplinkMACAddress"`
-	UplinkIPAddress      string   `json:"uplinkIPAddress"`
-	UplinkLeaseConfigMap string   `json:"uplinkLeaseConfigMap"`
+	LANNetwork           string    `json:"lanNetwork"`
+	LANMACAddress        string    `json:"lanMACAddress"`
+	FlatNetworks         []string  `json:"flatNetworks"`
+	UplinkNetwork        string    `json:"uplinkNetwork"`
+	UplinkInterface      string    `json:"uplinkInterface"`
+	UplinkMACAddress     string    `json:"uplinkMACAddress"`
+	UplinkIPAddress      string    `json:"uplinkIPAddress"`
+	UplinkLeaseConfigMap string    `json:"uplinkLeaseConfigMap"`
+	HA                   *HAParams `json:"ha"`
+}
+
+type HAParams struct {
+	LockName      string `json:"lockName"`
+	LeaseDuration string `json:"leaseDuration"`
+	RenewDeadline string `json:"renewDeadline"`
+	RetryPeriod   string `json:"retryPeriod"`
 }
 
 // Reads params from the file `/etc/config/egress.json`.
@@ -56,8 +67,30 @@ func (params Params) check() error {
 	if _, err := fw.ParseAddr(params.UplinkIPAddress); err != nil && params.UplinkIPAddress != "" {
 		return fmt.Errorf("if uplinkIPAddress is specified, it must be valid: %w", err)
 	}
-	if _, _, err := params.uplinkLeaseStoreName(); params.UplinkLeaseConfigMap != "" && err != nil {
+	if _, _, err := splitNamespaceName(params.UplinkLeaseConfigMap); params.UplinkLeaseConfigMap != "" && err != nil {
 		return fmt.Errorf("if uplinkLeaseStoreName is specified, it must be valid: %w", err)
+	}
+	if err := params.HA.check(); err != nil {
+		return fmt.Errorf("if ha is specified, it must be valid: %w", err)
+	}
+	return nil
+}
+
+func (haParams *HAParams) check() error {
+	if haParams == nil {
+		return nil
+	}
+	if _, _, err := splitNamespaceName(haParams.LockName); err != nil {
+		return fmt.Errorf("lockName must be valid: %w", err)
+	}
+	if _, err := time.ParseDuration(haParams.LeaseDuration); haParams.LeaseDuration != "" && err != nil {
+		return fmt.Errorf("if leaseDuration is specified, it must be valid: %w", err)
+	}
+	if _, err := time.ParseDuration(haParams.RenewDeadline); haParams.RenewDeadline != "" && err != nil {
+		return fmt.Errorf("if renewDeadline is specified, it must be valid: %w", err)
+	}
+	if _, err := time.ParseDuration(haParams.RetryPeriod); haParams.RetryPeriod != "" && err != nil {
+		return fmt.Errorf("if retryPeriod is specified, it must be valid: %w", err)
 	}
 	return nil
 }
@@ -107,6 +140,30 @@ func (cfg *Config) UplinkHWAddr() net.HardwareAddr {
 
 func (cfg *Config) UplinkLeaseStore() dhcp.LeaseStore {
 	return cfg.uplinkLeaseStore
+}
+
+func (cfg *Config) HACoordinator() ha.Coordinator {
+	if cfg.params.HA == nil {
+		return nil
+	}
+	var (
+		lockName, lockNamespace, err = splitNamespaceName(cfg.params.HA.LockName)
+		leaseDuration, _             = time.ParseDuration(cfg.params.HA.LeaseDuration)
+		renewDeadline, _             = time.ParseDuration(cfg.params.HA.RenewDeadline)
+		retryPeriod, _               = time.ParseDuration(cfg.params.HA.RetryPeriod)
+	)
+	if err != nil {
+		panic(fmt.Sprintf(
+			"params.check() should make this condition impossible: %v", err))
+	}
+	return &coordinator.Coordinator{
+		LockName:      lockName,
+		LockNamespace: lockNamespace,
+
+		LeaseDuration: leaseDuration,
+		RenewDeadline: renewDeadline,
+		RetryPeriod:   retryPeriod,
+	}
 }
 
 func (cfg *Config) FlatNetworks() []fw.StaticRoute {

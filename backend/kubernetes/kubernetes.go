@@ -197,7 +197,7 @@ func getUplinkLeaseStore(params Params) (dhcp.LeaseStore, error) {
 	if params.UplinkLeaseConfigMap == "" {
 		return nil, nil
 	}
-	ns, name, err := params.uplinkLeaseStoreName()
+	ns, name, err := splitNamespaceName(params.UplinkLeaseConfigMap)
 	if err != nil {
 		panic(fmt.Sprintf(
 			"kubernetes: should have been checked on the way in: %v", err))
@@ -212,16 +212,15 @@ func getUplinkLeaseStore(params Params) (dhcp.LeaseStore, error) {
 	return ls, nil
 }
 
-func (params Params) uplinkLeaseStoreName() (ns, name string, err error) {
-	cm := params.UplinkLeaseConfigMap
-	v := strings.SplitN(cm, "/", 3)
+func splitNamespaceName(s string) (ns, name string, err error) {
+	v := strings.SplitN(s, "/", 3)
 	switch len(v) {
 	case 1:
 		name = v[0]
 	case 2:
 		ns, name = v[0], v[1]
 	default:
-		err = fmt.Errorf("kubernetes: invalid namespace/name string: %q", cm)
+		err = fmt.Errorf("kubernetes: invalid [namespace/]name string: %q", s)
 	}
 	return
 }
