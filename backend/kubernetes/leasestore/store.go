@@ -45,7 +45,7 @@ func New() (*LeaseStore, error) {
 func (c *LeaseStore) Get(ctx context.Context) (l dhcp.Lease, err error) {
 	cmi, err := c.configMapInterface()
 	if err != nil {
-		err = fmt.Errorf("kubernetes: could not load client: %w", err)
+		err = fmt.Errorf("leasestore: could not load client: %w", err)
 		return
 	}
 	cm, err := cmi.Get(ctx, c.Name, metav1.GetOptions{})
@@ -55,6 +55,7 @@ func (c *LeaseStore) Get(ctx context.Context) (l dhcp.Lease, err error) {
 			// appear to be waaaay in the past.
 			err = nil
 		}
+		err = fmt.Errorf("leasestore: could not get lease: %w", err)
 		return
 	}
 	d, ok := cm.BinaryData[configMapKey]
@@ -67,7 +68,7 @@ func (c *LeaseStore) Get(ctx context.Context) (l dhcp.Lease, err error) {
 func (c *LeaseStore) Put(ctx context.Context, l dhcp.Lease) error {
 	cmi, err := c.configMapInterface()
 	if err != nil {
-		return fmt.Errorf("kubernetes: could not load client: %w", err)
+		return fmt.Errorf("leasestore: could not load client: %w", err)
 	}
 	cm := corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{Name: c.Name},
@@ -77,17 +78,22 @@ func (c *LeaseStore) Put(ctx context.Context, l dhcp.Lease) error {
 	}
 	_, err = cmi.Create(ctx, &cm, metav1.CreateOptions{})
 	if err != nil && !errors.IsAlreadyExists(err) {
-		return err
+		return fmt.Errorf(
+			"leasestore: could not create lease configmap: %w", err)
 	}
 	b, err := json.Marshal(corev1.ConfigMap{BinaryData: cm.BinaryData})
 	if err != nil {
 		panic(fmt.Sprintf(
-			"kubernetes: could not marshal configmap for lease: %+v", l))
+			"leasestore: could not marshal configmap for lease: %+v", l))
 	}
 	_, err = cmi.Patch(
 		ctx, c.Name, types.StrategicMergePatchType, b,
 		metav1.PatchOptions{})
-	return err
+	if err != nil {
+		return fmt.Errorf(
+			"leasestore: could not patch existing lease configmap: %w", err)
+	}
+	return nil
 }
 
 func (c *LeaseStore) configMapInterface() (clientcorev1.ConfigMapInterface, error) {
@@ -126,7 +132,7 @@ func serializeLease(l dhcp.Lease) []byte {
 			RebindAfter: int(l.RebindAfter / time.Millisecond),
 		})
 	if err != nil {
-		panic(fmt.Sprintf("kubernetes: could not marshal lease: %+v", l))
+		panic(fmt.Sprintf("leasestore: could not marshal lease: %+v", l))
 	}
 	return b
 }
@@ -136,7 +142,7 @@ func deserializeLease(d []byte) (l dhcp.Lease, err error) {
 	err = json.Unmarshal(d, &s)
 	if err != nil {
 		err = fmt.Errorf(
-			"kubernetes: could not unmarshal lease %q: %w", d, err)
+			"leasestore: could not unmarshal lease %q: %w", d, err)
 		return
 	}
 	return parseLease(s)
@@ -146,19 +152,19 @@ func parseLease(s serializableLease) (l dhcp.Lease, err error) {
 	leasedAddr, err := fw.ParseAddr(s.LeasedIP)
 	if err != nil {
 		err = fmt.Errorf(
-			"kubernetes: %q is not a valid IP: %w", s.LeasedIP, err)
+			"leasestore: %q is not a valid IP: %w", s.LeasedIP, err)
 		return
 	}
 	l.LeasedIP = leasedAddr.IP
 	l.SubnetMask, _ = leasedAddr.Mask.Size()
 	l.GatewayIP = net.ParseIP(s.GatewayIP)
 	if l.GatewayIP == nil {
-		err = fmt.Errorf("kubernetes: %q is not a valid IP", s.GatewayIP)
+		err = fmt.Errorf("leasestore: %q is not a valid IP", s.GatewayIP)
 		return
 	}
 	l.ServerIP = net.ParseIP(s.ServerIP)
 	if l.ServerIP == nil {
-		err = fmt.Errorf("kubernetes: %q is not a valid IP", s.ServerIP)
+		err = fmt.Errorf("leasestore: %q is not a valid IP", s.ServerIP)
 		return
 	}
 	l.StartTime = s.StartTime
