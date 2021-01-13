@@ -118,6 +118,15 @@ func (c *Coordinator) createLeaderElector(
 		return nil, err
 	}
 
+	ns := c.LockNamespace
+	if ns == "" {
+		ns, err = metadata.GetPodNamespace()
+		if err != nil {
+			return nil, fmt.Errorf(
+				"coordinator: could not get pod namespace: %w", err)
+		}
+	}
+
 	lock := &resourcelock.LeaseLock{
 		LeaseMeta: metav1.ObjectMeta{
 			Name:      c.LockName,
