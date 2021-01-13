@@ -24,6 +24,7 @@ type Params struct {
 	UplinkInterface      string    `json:"uplinkInterface"`
 	UplinkMACAddress     string    `json:"uplinkMACAddress"`
 	UplinkIPAddress      string    `json:"uplinkIPAddress"`
+	UplinkGWAddress      string    `json:"uplinkGWAddress"`
 	UplinkLeaseConfigMap string    `json:"uplinkLeaseConfigMap"`
 	HA                   *HAParams `json:"ha"`
 }
@@ -66,6 +67,9 @@ func (params Params) check() error {
 	}
 	if _, err := fw.ParseAddr(params.UplinkIPAddress); err != nil && params.UplinkIPAddress != "" {
 		return fmt.Errorf("if uplinkIPAddress is specified, it must be valid: %w", err)
+	}
+	if ip := net.ParseIP(params.UplinkGWAddress); ip == nil && params.UplinkGWAddress != "" {
+		return fmt.Errorf("if uplinkGWAddress is specified, it must be valid: %s", params.UplinkGWAddress)
 	}
 	if _, _, err := splitNamespaceName(params.UplinkLeaseConfigMap); params.UplinkLeaseConfigMap != "" && err != nil {
 		return fmt.Errorf("if uplinkLeaseStoreName is specified, it must be valid: %w", err)
@@ -136,6 +140,26 @@ func (cfg *Config) UplinkHWAddr() net.HardwareAddr {
 		return nil
 	}
 	return a
+}
+
+func (cfg *Config) UplinkAddr() (a fw.Addr, ok bool) {
+	if cfg.params.UplinkIPAddress == "" {
+		return
+	}
+	var err error
+	a, err = fw.ParseAddr(cfg.params.UplinkIPAddress)
+	if err != nil {
+		panic("kubernetes: config should have been checked")
+	}
+	ok = true
+	return
+}
+
+func (cfg *Config) UplinkGW() (a net.IP, ok bool) {
+	if cfg.params.UplinkGWAddress == "" {
+		return
+	}
+	return net.ParseIP(cfg.params.UplinkGWAddress), true
 }
 
 func (cfg *Config) UplinkLeaseStore() dhcp.LeaseStore {

@@ -25,6 +25,9 @@ type ConfigUplinkHWAddr interface {
 type ConfigUplinkAddr interface {
 	// The IP+net of the uplink interface for connection.
 	UplinkAddr() (a fw.Addr, ok bool)
+
+	// The GW of the next hop (if the default route should be overridden).
+	UplinkGW() (a net.IP, ok bool)
 }
 
 // Allows specifying the dhcp.LeaseStore when DHCP is used. DHCP is used when
@@ -42,6 +45,7 @@ func MakeVAddrUplink(c fw.Config) vaddr.Suite {
 	w = append(w, contributeUplinkUp(c)...)
 	w = append(w, contributeUplinkVirtualMAC(c)...)
 	w = append(w, contributeUplinkIP(c)...)
+	w = append(w, contributeUplinkGW(c)...)
 	w = append(w, contributeUplinkGratuitousARP(c)...)
 	a = append(a, contributeUplinkDHCP(c)...)
 	return vaddr.Suite{Wrappers: w, Actives: a}
@@ -81,6 +85,27 @@ func contributeUplinkIP(c fw.Config) (w []vaddr.Wrapper) {
 		&vaddrutil.IP{
 			Link: c.Uplink(),
 			Addr: a,
+		})
+	return
+}
+
+func contributeUplinkGW(c fw.Config) (w []vaddr.Wrapper) {
+	i, ok := c.(ConfigUplinkAddr)
+	if !ok {
+		return
+	}
+	var ip net.IP
+	if ip, ok = i.UplinkGW(); !ok {
+		return
+	}
+	a, err := fw.ParseAddr(ip.String())
+	if err != nil {
+		panic("fwutil: couldn't parse net.IP as fw.Addr")
+	}
+	w = append(w,
+		&vaddrutil.DefaultRoute{
+			Link: c.Uplink(),
+			GW:   a,
 		})
 	return
 }
